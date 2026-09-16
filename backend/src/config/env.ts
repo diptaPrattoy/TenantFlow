@@ -1,10 +1,20 @@
 import "dotenv/config";
 
-const parsePort = (value: string | undefined): number => {
+const requireEnv = (name: string) => {
+  const value = process.env[name]?.trim();
+
+  if (!value) {
+    throw new Error(`${name} is required.`);
+  }
+
+  return value;
+};
+
+const parsePort = (value: string | undefined) => {
   const port = Number(value ?? 5000);
 
-  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-    throw new Error("PORT must be a valid TCP port number.");
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error("PORT must be a positive integer.");
   }
 
   return port;
@@ -14,7 +24,7 @@ const parsePositiveInteger = (
   name: string,
   value: string | undefined,
   fallback: number,
-): number => {
+) => {
   const parsed = Number(value ?? fallback);
 
   if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -22,16 +32,6 @@ const parsePositiveInteger = (
   }
 
   return parsed;
-};
-
-const requireEnv = (name: string): string => {
-  const value = process.env[name]?.trim();
-
-  if (!value) {
-    throw new Error(`${name} is required.`);
-  }
-
-  return value;
 };
 
 const jwtSecret = requireEnv("JWT_SECRET");
@@ -51,4 +51,5 @@ export const env = {
     process.env.JWT_EXPIRES_IN_SECONDS,
     3600,
   ),
+  stripeSecretKey: requireEnv("STRIPE_SECRET_KEY"),
 } as const;

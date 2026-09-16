@@ -99,6 +99,41 @@ Authorization: Bearer <access-token>
 
 Login is rate-limited and request bodies are validated with Zod.
 
+## Paid Registration and Stripe Checkout
+
+Public registration is staged in `registration_intents`. Creating a checkout does not create an organization or user account.
+
+Current public billing routes:
+
+```text
+GET  /api/v1/plans
+POST /api/v1/registration/checkout
+POST /api/v1/registration/:registrationId/checkout
+GET  /api/v1/registration/:registrationId/status
+```
+
+`POST /registration/checkout` validates the signup data, hashes the admin password, creates a pending registration intent, and creates a Stripe Checkout Session in subscription mode. The API returns Stripe's hosted checkout URL to the frontend.
+
+If checkout is abandoned, the retry route reuses the existing open Stripe session. If that session has expired, a new session is created. A completed session is not replaced while payment confirmation is still pending.
+
+The real `Organization`, `ORG_ADMIN` user, subscription, payment, and transaction records are intentionally not created here. Those records are created only after the Stripe webhook is verified in the payment-processing step.
+
+### Stripe test setup
+
+Add a Stripe test-mode secret key to `backend/.env`:
+
+```env
+STRIPE_SECRET_KEY=sk_test_...
+```
+
+After seeding the local plans, create their matching Stripe products and recurring prices once:
+
+```bash
+npm run stripe:sync-plans
+```
+
+The command stores the returned Stripe product and price IDs on each plan. It is safe to run again because plans that already have Stripe IDs are skipped.
+
 ## Tenant Isolation
 
 Organization routes never accept a tenant ID from the request body or query string. After JWT verification, the API reloads the user from PostgreSQL and creates a request-scoped tenant context from `user.organizationId`.
@@ -239,6 +274,8 @@ The current local collection includes:
 ```text
 Health
 Authentication
+Plans
+Registration
 Organization
 ```
 
@@ -257,6 +294,7 @@ npm run db:deploy
 npm run db:seed
 npm run db:check
 npm run db:studio
+npm run stripe:sync-plans
 ```
 
 For future schema changes during development:
