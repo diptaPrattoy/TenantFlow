@@ -12,6 +12,9 @@ declare global {
         status: UserStatus;
         organizationStatus: OrganizationStatus | null;
       };
+      tenant?: {
+        organizationId: string;
+      };
     }
   }
 }

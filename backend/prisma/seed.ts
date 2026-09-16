@@ -81,9 +81,135 @@ const seedPlatformAdmin = async () => {
   console.log(`Seeded platform admin: ${email}`);
 };
 
+const seedDemoOrganization = async () => {
+  const organizationName = process.env.SEED_ORGANIZATION_NAME?.trim();
+  const adminName = process.env.SEED_ORG_ADMIN_NAME?.trim();
+  const adminEmail = process.env.SEED_ORG_ADMIN_EMAIL?.trim().toLowerCase();
+  const adminPassword = process.env.SEED_ORG_ADMIN_PASSWORD;
+  const memberName = process.env.SEED_ORG_MEMBER_NAME?.trim();
+  const memberEmail = process.env.SEED_ORG_MEMBER_EMAIL?.trim().toLowerCase();
+  const memberPassword = process.env.SEED_ORG_MEMBER_PASSWORD;
+
+  if (
+    !organizationName ||
+    !adminName ||
+    !adminEmail ||
+    !adminPassword ||
+    !memberName ||
+    !memberEmail ||
+    !memberPassword
+  ) {
+    console.log("Demo organization seed skipped. Seed credentials are not configured.");
+    return;
+  }
+
+  const starterPlan = await prisma.plan.findUnique({
+    where: { name: "Starter" },
+  });
+
+  if (!starterPlan) {
+    throw new Error("Starter plan must exist before seeding the demo organization.");
+  }
+
+  const existingAdmin = await prisma.user.findUnique({
+    where: { email: adminEmail },
+    select: { organizationId: true },
+  });
+
+  const organization = existingAdmin?.organizationId
+    ? await prisma.organization.update({
+        where: { id: existingAdmin.organizationId },
+        data: {
+          name: organizationName,
+          contactEmail: adminEmail,
+          billingEmail: adminEmail,
+          status: "ACTIVE",
+        },
+      })
+    : await prisma.organization.create({
+        data: {
+          name: organizationName,
+          contactEmail: adminEmail,
+          billingEmail: adminEmail,
+          status: "ACTIVE",
+        },
+      });
+
+  const [adminPasswordHash, memberPasswordHash] = await Promise.all([
+    hashPassword(adminPassword),
+    hashPassword(memberPassword),
+  ]);
+
+  await prisma.user.upsert({
+    where: { email: adminEmail },
+    update: {
+      organizationId: organization.id,
+      name: adminName,
+      passwordHash: adminPasswordHash,
+      role: "ORG_ADMIN",
+      status: "ACTIVE",
+    },
+    create: {
+      organizationId: organization.id,
+      name: adminName,
+      email: adminEmail,
+      passwordHash: adminPasswordHash,
+      role: "ORG_ADMIN",
+      status: "ACTIVE",
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { email: memberEmail },
+    update: {
+      organizationId: organization.id,
+      name: memberName,
+      passwordHash: memberPasswordHash,
+      role: "ORG_MEMBER",
+      status: "ACTIVE",
+    },
+    create: {
+      organizationId: organization.id,
+      name: memberName,
+      email: memberEmail,
+      passwordHash: memberPasswordHash,
+      role: "ORG_MEMBER",
+      status: "ACTIVE",
+    },
+  });
+
+  const periodStart = new Date();
+  const periodEnd = new Date(periodStart);
+  periodEnd.setDate(periodEnd.getDate() + 30);
+
+  await prisma.subscription.upsert({
+    where: { organizationId: organization.id },
+    update: {
+      planId: starterPlan.id,
+      status: "ACTIVE",
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: false,
+      cancelledAt: null,
+    },
+    create: {
+      organizationId: organization.id,
+      planId: starterPlan.id,
+      status: "ACTIVE",
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+    },
+  });
+
+  console.log(`Seeded demo organization: ${organizationName}`);
+  console.log(`Seeded organization admin: ${adminEmail}`);
+  console.log(`Seeded organization member: ${memberEmail}`);
+};
+
 try {
   await seedPlans();
   await seedPlatformAdmin();
+  await seedDemoOrganization();
 } catch (error) {
   console.error("Database seed failed.");
   console.error(error);

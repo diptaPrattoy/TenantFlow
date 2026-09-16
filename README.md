@@ -99,6 +99,37 @@ Authorization: Bearer <access-token>
 
 Login is rate-limited and request bodies are validated with Zod.
 
+## Tenant Isolation
+
+Organization routes never accept a tenant ID from the request body or query string. After JWT verification, the API reloads the user from PostgreSQL and creates a request-scoped tenant context from `user.organizationId`.
+
+```text
+JWT user ID
+    ↓
+Load current user from PostgreSQL
+    ↓
+user.organizationId
+    ↓
+req.tenant.organizationId
+    ↓
+organization-scoped Prisma query
+```
+
+Current organization routes:
+
+```text
+GET /api/v1/organization
+GET /api/v1/organization/members
+```
+
+`GET /organization` is available to Organization Admins and Organization Members. Members receive only basic organization information and the current plan name. Billing/contact fields are not returned to members.
+
+`GET /organization/members` is restricted to Organization Admins and always filters users by the authenticated admin's organization ID.
+
+Platform Admin accounts do not have an organization context and cannot use tenant-only routes.
+
+For future routes that receive a resource ID such as a member, payment, or invitation ID, the resource will be queried together with `organizationId` rather than trusting the resource ID by itself.
+
 ## Environment Setup
 
 Create `backend/.env` from the example file:
@@ -123,15 +154,25 @@ JWT_SECRET=replace-this-with-a-long-random-secret
 JWT_EXPIRES_IN_SECONDS=3600
 ```
 
-For a local platform admin, set the seed values in `backend/.env` before running the seed command:
+The seed script can create the three accounts used while developing and reviewing the application:
 
 ```env
 SEED_PLATFORM_ADMIN_NAME=Platform Admin
 SEED_PLATFORM_ADMIN_EMAIL=admin@tenantflow.local
 SEED_PLATFORM_ADMIN_PASSWORD=ChangeMe123!
+
+SEED_ORGANIZATION_NAME=Demo Organization
+SEED_ORG_ADMIN_NAME=Organization Admin
+SEED_ORG_ADMIN_EMAIL=orgadmin@tenantflow.local
+SEED_ORG_ADMIN_PASSWORD=ChangeMe123!
+SEED_ORG_MEMBER_NAME=Organization Member
+SEED_ORG_MEMBER_EMAIL=member@tenantflow.local
+SEED_ORG_MEMBER_PASSWORD=ChangeMe123!
 ```
 
-These values are only used by the development seed script. Do not commit your real `.env` file.
+The demo organization receives an active Starter subscription so tenant-scoped routes can be tested before Stripe onboarding is implemented. This is development seed data only; the real registration flow still creates organizations only after a verified Stripe payment.
+
+Do not commit your real `.env` file.
 
 ## Getting Started
 
@@ -153,7 +194,7 @@ Apply the database migration:
 npm run db:deploy
 ```
 
-Seed the plans and optional platform admin:
+Seed the plans and development accounts:
 
 ```bash
 npm run db:seed
@@ -193,16 +234,15 @@ http://localhost:3000
 
 The `postman/` folder is used for local API testing while development is in progress. Its JSON files are currently ignored by Git and will be added to the repository with the final submission.
 
-The current collection includes:
+The current local collection includes:
 
 ```text
 Health
 Authentication
-  ├── Login
-  └── Current User
+Organization
 ```
 
-The Login request automatically saves the returned token to the `accessToken` environment variable.
+It contains separate login requests for Platform Admin, Organization Admin, and Organization Member accounts, plus organization profile/member-list requests. The collection remains ignored by Git until the final submission commit.
 
 ## Useful Commands
 
