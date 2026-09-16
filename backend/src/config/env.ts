@@ -52,4 +52,5 @@ export const env = {
     3600,
   ),
   stripeSecretKey: requireEnv("STRIPE_SECRET_KEY"),
+  stripeWebhookSecret: requireEnv("STRIPE_WEBHOOK_SECRET"),
 } as const;

@@ -5,13 +5,9 @@ import {
   retryRegistrationCheckout,
   startRegistration,
 } from "../services/registration.service.js";
-
 import { ApiError } from "../errors/api-error.js";
 
-export const createRegistrationCheckout: RequestHandler = async (
-  req,
-  res
-) => {
+export const createRegistrationCheckout: RequestHandler = async (req, res) => {
   const result = await startRegistration(req.body);
 
   res.status(201).json({

@@ -4,6 +4,7 @@ import { env } from "./config/env.js";
 import { errorHandler } from "./middleware/error.middleware.js";
 import { notFoundHandler } from "./middleware/not-found.middleware.js";
 import { apiRouter } from "./routes/index.js";
+import { stripeWebhookRouter } from "./routes/webhook.route.js";
 
 export const createApp = () => {
   const app = express();
@@ -15,6 +16,12 @@ export const createApp = () => {
       origin: env.frontendUrl,
       credentials: true,
     }),
+  );
+
+  app.use(
+    "/api/v1/webhooks/stripe",
+    express.raw({ type: "application/json", limit: "1mb" }),
+    stripeWebhookRouter,
   );
 
   app.use(express.json({ limit: "1mb" }));

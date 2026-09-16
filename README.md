@@ -116,14 +116,41 @@ GET  /api/v1/registration/:registrationId/status
 
 If checkout is abandoned, the retry route reuses the existing open Stripe session. If that session has expired, a new session is created. A completed session is not replaced while payment confirmation is still pending.
 
-The real `Organization`, `ORG_ADMIN` user, subscription, payment, and transaction records are intentionally not created here. Those records are created only after the Stripe webhook is verified in the payment-processing step.
+The real `Organization`, `ORG_ADMIN` user, subscription, payment, and transaction records are not created by the checkout endpoint. They are created only after Stripe sends a verified payment event.
+
+## Stripe Webhook Processing
+
+The Stripe webhook endpoint is:
+
+```text
+POST /api/v1/webhooks/stripe
+```
+
+It is mounted before the normal JSON body parser so Stripe signature verification receives the original raw request body. Webhook events are recorded in `webhook_events` by Stripe event ID before business logic runs. A processed event is ignored if Stripe sends it again, while a failed event can be retried.
+
+For a successful initial subscription payment, the backend retrieves the Checkout Session from Stripe and verifies the registration reference, selected plan, amount, currency, customer, and subscription. It then uses one Prisma transaction to create:
+
+```text
+Organization
+Organization Admin
+Subscription
+Subscription Event
+Payment
+Transaction
+RegistrationIntent -> COMPLETED
+```
+
+If any database operation fails, the Prisma transaction is rolled back and the webhook event is marked as failed so Stripe can retry it.
+
+Checkout expiration and asynchronous payment failure events update the pending registration without creating an active organization.
 
 ### Stripe test setup
 
-Add a Stripe test-mode secret key to `backend/.env`:
+Add the Stripe test-mode key and webhook signing secret to `backend/.env`:
 
 ```env
 STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
 ```
 
 After seeding the local plans, create their matching Stripe products and recurring prices once:
@@ -133,6 +160,14 @@ npm run stripe:sync-plans
 ```
 
 The command stores the returned Stripe product and price IDs on each plan. It is safe to run again because plans that already have Stripe IDs are skipped.
+
+For local webhook testing, run Stripe CLI in a separate terminal:
+
+```bash
+stripe listen --forward-to localhost:5000/api/v1/webhooks/stripe
+```
+
+Copy the `whsec_...` signing secret printed by the CLI into `STRIPE_WEBHOOK_SECRET`, restart the backend, then complete Checkout with a Stripe test card. After the webhook succeeds, the registration status becomes `COMPLETED` and the newly created Organization Admin can log in.
 
 ## Tenant Isolation
 
