@@ -45,7 +45,7 @@ export default function Home() {
 
         <div className="status-row">
           <span className="status-dot" aria-hidden="true" />
-          <span>Commit 01 · Initial project setup</span>
+          <span>Project setup ready · API foundation in progress</span>
         </div>
       </section>
     </main>

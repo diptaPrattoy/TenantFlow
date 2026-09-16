@@ -35,5 +35,5 @@ Thumbs.db
 # Prisma generated client
 backend/src/generated/
 
-# Local Postman files
+# Local API testing files (added to Git in the final submission commit)
 postman/*.json

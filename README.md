@@ -8,6 +8,8 @@ TenantFlow is a multi-tenant SaaS subscription platform for organizations. Each 
 - **Backend:** Node.js, Express.js, TypeScript
 - **Database:** PostgreSQL on Neon
 - **ORM:** Prisma ORM
+- **Authentication:** JWT and bcrypt password hashing
+- **Validation:** Zod
 - **Payments:** Stripe test mode
 - **Frontend data fetching:** TanStack Query
 
@@ -22,6 +24,12 @@ tenantflow/
 │   │   ├── schema.prisma
 │   │   └── seed.ts
 │   └── src/
+│       ├── controllers/
+│       ├── middleware/
+│       ├── routes/
+│       ├── schemas/
+│       ├── services/
+│       └── utils/
 ├── postman/
 ├── package.json
 └── README.md
@@ -70,12 +78,28 @@ Database transaction
 
 This avoids leaving an active organization behind when checkout is abandoned or payment fails.
 
-## Neon Connection Setup
+## Authentication
 
-TenantFlow uses two Neon connection strings:
+Users log in with email and password. Passwords are stored as bcrypt hashes and the API returns a short-lived JWT access token.
 
-- `DATABASE_URL` — pooled connection used by the running Express API
-- `DIRECT_URL` — direct connection used by Prisma migrations
+The token identifies the user by ID. Protected requests then load the current user from the database so role changes, account suspension, and organization suspension take effect without trusting old role or tenant information from a token.
+
+Current authentication routes:
+
+```text
+POST /api/v1/auth/login
+GET  /api/v1/auth/me
+```
+
+`/auth/me` requires:
+
+```text
+Authorization: Bearer <access-token>
+```
+
+Login is rate-limited and request bodies are validated with Zod.
+
+## Environment Setup
 
 Create `backend/.env` from the example file:
 
@@ -83,73 +107,65 @@ Create `backend/.env` from the example file:
 Copy-Item backend/.env.example backend/.env
 ```
 
-Then replace the placeholder values with the connection strings from your Neon project.
-
-Example:
+Set both Neon connection strings:
 
 ```env
 DATABASE_URL=postgresql://USER:PASSWORD@HOST-pooler.REGION.aws.neon.tech/DATABASE?sslmode=require
 DIRECT_URL=postgresql://USER:PASSWORD@HOST.REGION.aws.neon.tech/DATABASE?sslmode=require
 ```
 
-Do not commit `.env`.
+`DATABASE_URL` is the pooled connection used by the running API. `DIRECT_URL` is the direct connection used by Prisma migrations.
+
+Add a JWT secret of at least 32 characters:
+
+```env
+JWT_SECRET=replace-this-with-a-long-random-secret
+JWT_EXPIRES_IN_SECONDS=3600
+```
+
+For a local platform admin, set the seed values in `backend/.env` before running the seed command:
+
+```env
+SEED_PLATFORM_ADMIN_NAME=Platform Admin
+SEED_PLATFORM_ADMIN_EMAIL=admin@tenantflow.local
+SEED_PLATFORM_ADMIN_PASSWORD=ChangeMe123!
+```
+
+These values are only used by the development seed script. Do not commit your real `.env` file.
 
 ## Getting Started
 
-### 1. Install dependencies
-
-From the repository root:
+Install dependencies from the repository root:
 
 ```bash
 npm install
 ```
 
-Create the backend environment file before generating Prisma Client:
-
-```powershell
-Copy-Item backend/.env.example backend/.env
-```
-
-Add your Neon connection strings, then generate Prisma Client:
+Generate Prisma Client:
 
 ```bash
 npm run db:generate
 ```
 
-### 2. Apply the database migration
+Apply the database migration:
 
 ```bash
 npm run db:deploy
 ```
 
-The initial migration creates the tables, enums, indexes, unique constraints, and foreign keys defined in `backend/prisma/schema.prisma`.
-
-### 3. Seed the plans
+Seed the plans and optional platform admin:
 
 ```bash
 npm run db:seed
 ```
 
-This creates two development plans:
-
-- Starter — $19/month
-- Professional — $49/month
-
-Stripe product and price IDs will be added when Stripe integration is implemented.
-
-### 4. Check the database connection
+Check the Neon connection:
 
 ```bash
 npm run db:check
 ```
 
-Expected output:
-
-```text
-Database connection successful.
-```
-
-### 5. Start the backend
+Start the backend:
 
 ```bash
 npm run dev:backend
@@ -161,15 +177,7 @@ API base URL:
 http://localhost:5000/api/v1
 ```
 
-Health check:
-
-```text
-GET /api/v1/health
-```
-
-### 6. Start the frontend
-
-In another terminal:
+Start the frontend in another terminal:
 
 ```bash
 npm run dev:frontend
@@ -180,6 +188,21 @@ Frontend URL:
 ```text
 http://localhost:3000
 ```
+
+## Postman
+
+The `postman/` folder is used for local API testing while development is in progress. Its JSON files are currently ignored by Git and will be added to the repository with the final submission.
+
+The current collection includes:
+
+```text
+Health
+Authentication
+  ├── Login
+  └── Current User
+```
+
+The Login request automatically saves the returned token to the `accessToken` environment variable.
 
 ## Useful Commands
 
@@ -196,19 +219,9 @@ npm run db:check
 npm run db:studio
 ```
 
-For future schema changes during development, create a new migration from the backend workspace:
+For future schema changes during development:
 
 ```bash
 cd backend
 npm run db:migrate -- --name describe_the_change
 ```
-
-## API Convention
-
-Application routes use the `/api/v1` prefix.
-
-```text
-GET /api/v1/health
-```
-
-The `postman/` folder contains the API collection and local environment. Import both files into Postman. The collection will grow with each backend feature so requests stay in sync with the code.
