@@ -188,17 +188,22 @@ organization-scoped Prisma query
 Current organization routes:
 
 ```text
-GET /api/v1/organization
-GET /api/v1/organization/members
+GET    /api/v1/organization
+PATCH  /api/v1/organization
+GET    /api/v1/organization/members
+POST   /api/v1/organization/invitations
+PATCH  /api/v1/organization/members/:memberId/role
+DELETE /api/v1/organization/members/:memberId
+POST   /api/v1/invitations/:token/accept
 ```
 
 `GET /organization` is available to Organization Admins and Organization Members. Members receive only basic organization information and the current plan name. Billing/contact fields are not returned to members.
 
-`GET /organization/members` is restricted to Organization Admins and always filters users by the authenticated admin's organization ID.
+Organization Admins can update the organization profile, invite members, change another member's role, and remove another member. Member lookups always include the authenticated `organizationId`, so a UUID from another tenant cannot be used to manage that user. An admin cannot remove or change their own role through these management routes.
+
+Invitation tokens are random values, while only a SHA-256 hash is stored in the database. Invitations expire after seven days. In development, the create-invitation response includes the acceptance URL so the flow can be tested before email delivery is added. The public acceptance route validates the token, creates or reactivates the invited account, and marks the invitation as accepted in one database transaction.
 
 Platform Admin accounts do not have an organization context and cannot use tenant-only routes.
-
-For future routes that receive a resource ID such as a member, payment, or invitation ID, the resource will be queried together with `organizationId` rather than trusting the resource ID by itself.
 
 ## Environment Setup
 
