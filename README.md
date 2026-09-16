@@ -343,3 +343,58 @@ For future schema changes during development:
 cd backend
 npm run db:migrate -- --name describe_the_change
 ```
+
+## Billing and Subscription Management
+
+Organization Admin billing routes:
+
+```text
+GET   /api/v1/billing/subscription
+PATCH /api/v1/billing/subscription/plan
+POST  /api/v1/billing/subscription/cancel
+POST  /api/v1/billing/portal
+GET   /api/v1/billing/payments
+GET   /api/v1/billing/transactions
+```
+
+Plan changes are sent to Stripe first and then recorded locally with a subscription history event. Cancellation is scheduled at the end of the current billing period. Payment-method management is handled through Stripe Billing Portal instead of storing card details in TenantFlow.
+
+Ongoing Stripe invoice webhooks update payment history, transaction history, subscription status, renewal dates, and failed-payment records. Invoice URLs from Stripe are stored on payment records for download from the billing page.
+
+For local testing, use an organization created through the Stripe registration flow. The seeded demo organization is intentionally not linked to a Stripe customer or subscription.
+
+## Platform Administration
+
+Platform Admin routes:
+
+```text
+GET   /api/v1/admin/stats
+GET   /api/v1/admin/organizations
+GET   /api/v1/admin/organizations/:organizationId
+PATCH /api/v1/admin/organizations/:organizationId/status
+GET   /api/v1/admin/plans
+POST  /api/v1/admin/plans
+PATCH /api/v1/admin/plans/:planId
+GET   /api/v1/admin/transactions
+```
+
+Organization listing supports search, status filtering, and plan filtering. Platform Admins can suspend or reactivate organizations, inspect an organization's members and billing history, manage plans, and filter transactions across the platform.
+
+## User Profile and Password Recovery
+
+Authenticated users can manage their own account through:
+
+```text
+GET   /api/v1/profile
+PATCH /api/v1/profile
+PATCH /api/v1/profile/password
+```
+
+Password recovery routes are public and rate-limited:
+
+```text
+POST /api/v1/auth/forgot-password
+POST /api/v1/auth/reset-password
+```
+
+Reset tokens are random values while only their SHA-256 hashes are stored in PostgreSQL. They expire after 30 minutes and become unusable after a successful reset. During local development the forgot-password response includes the reset token so the flow can be tested before email delivery is enabled.

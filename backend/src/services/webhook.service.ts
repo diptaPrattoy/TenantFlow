@@ -154,6 +154,240 @@ const getCheckoutDetails = async (sessionId: string) => {
   };
 };
 
+
+const invoiceSubscriptionId = (invoice: Stripe.Invoice) => {
+  const value = (invoice as Stripe.Invoice & {
+    subscription?: string | Stripe.Subscription | null;
+    parent?: { subscription_details?: { subscription?: string | Stripe.Subscription | null } | null } | null;
+  }).subscription ?? (invoice as Stripe.Invoice & {
+    parent?: { subscription_details?: { subscription?: string | Stripe.Subscription | null } | null } | null;
+  }).parent?.subscription_details?.subscription;
+
+  return expandableId(value);
+};
+
+const invoicePaymentIntentId = (invoice: Stripe.Invoice) => {
+  const value = (invoice as Stripe.Invoice & {
+    payment_intent?: string | Stripe.PaymentIntent | null;
+  }).payment_intent;
+
+  return expandableId(value);
+};
+
+const syncSuccessfulInvoice = async (invoice: Stripe.Invoice) => {
+  const stripeSubscriptionId = invoiceSubscriptionId(invoice);
+  if (!stripeSubscriptionId) return;
+
+  const localSubscription = await prisma.subscription.findUnique({
+    where: { stripeSubscriptionId },
+    include: { plan: true },
+  });
+
+  // The first invoice can arrive before checkout.session.completed creates the local subscription.
+  if (!localSubscription) return;
+
+  const existingPayment = await prisma.payment.findUnique({
+    where: { stripeInvoiceId: invoice.id },
+    select: { id: true, status: true },
+  });
+  if (existingPayment?.status === "SUCCESS") return;
+
+  const stripeSubscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+  const item = stripeSubscription.items.data[0];
+  const paidAt = invoice.status_transitions.paid_at
+    ? new Date(invoice.status_transitions.paid_at * 1000)
+    : new Date();
+
+  await prisma.$transaction(async (tx) => {
+    const payment = existingPayment
+      ? await tx.payment.update({
+          where: { id: existingPayment.id },
+          data: {
+            amount: invoice.amount_paid,
+            currency: invoice.currency.toUpperCase(),
+            status: "SUCCESS",
+            stripePaymentIntentId: invoicePaymentIntentId(invoice),
+            invoiceUrl: invoice.hosted_invoice_url ?? null,
+            invoicePdfUrl: invoice.invoice_pdf ?? null,
+            failureReason: null,
+            paidAt,
+          },
+        })
+      : await tx.payment.create({
+          data: {
+            organizationId: localSubscription.organizationId,
+            subscriptionId: localSubscription.id,
+            amount: invoice.amount_paid,
+            currency: invoice.currency.toUpperCase(),
+            status: "SUCCESS",
+            stripeInvoiceId: invoice.id,
+            stripePaymentIntentId: invoicePaymentIntentId(invoice),
+            invoiceUrl: invoice.hosted_invoice_url ?? null,
+            invoicePdfUrl: invoice.invoice_pdf ?? null,
+            paidAt,
+          },
+        });
+
+    const providerReference = `invoice:${invoice.id}`;
+    const existingTransaction = await tx.transaction.findUnique({
+      where: { providerReference },
+    });
+
+    if (existingTransaction) {
+      await tx.transaction.update({
+        where: { id: existingTransaction.id },
+        data: {
+          paymentId: payment.id,
+          status: "SUCCESS",
+          amount: payment.amount,
+          currency: payment.currency,
+          failureReason: null,
+          description: `${localSubscription.plan.name} subscription payment`,
+        },
+      });
+    } else {
+      await tx.transaction.create({
+        data: {
+          organizationId: localSubscription.organizationId,
+          paymentId: payment.id,
+          type: "SUBSCRIPTION_PAYMENT",
+          status: "SUCCESS",
+          amount: payment.amount,
+          currency: payment.currency,
+          providerReference,
+          description: `${localSubscription.plan.name} subscription payment`,
+        },
+      });
+    }
+
+    await tx.subscription.update({
+      where: { id: localSubscription.id },
+      data: {
+        status: "ACTIVE",
+        currentPeriodStart: item
+          ? new Date(item.current_period_start * 1000)
+          : localSubscription.currentPeriodStart,
+        currentPeriodEnd: item
+          ? new Date(item.current_period_end * 1000)
+          : localSubscription.currentPeriodEnd,
+      },
+    });
+
+    await tx.subscriptionEvent.create({
+      data: {
+        organizationId: localSubscription.organizationId,
+        subscriptionId: localSubscription.id,
+        eventType: "RENEWED",
+        previousPlanId: localSubscription.planId,
+        newPlanId: localSubscription.planId,
+        metadata: { stripeInvoiceId: invoice.id },
+      },
+    });
+  });
+};
+
+const syncFailedInvoice = async (invoice: Stripe.Invoice) => {
+  const stripeSubscriptionId = invoiceSubscriptionId(invoice);
+  if (!stripeSubscriptionId) return;
+
+  const localSubscription = await prisma.subscription.findUnique({
+    where: { stripeSubscriptionId },
+    include: { plan: true },
+  });
+  if (!localSubscription) return;
+
+  const existingPayment = await prisma.payment.findUnique({
+    where: { stripeInvoiceId: invoice.id },
+    select: { id: true },
+  });
+  if (existingPayment) return;
+
+  await prisma.$transaction(async (tx) => {
+    const payment = await tx.payment.create({
+      data: {
+        organizationId: localSubscription.organizationId,
+        subscriptionId: localSubscription.id,
+        amount: invoice.amount_due,
+        currency: invoice.currency.toUpperCase(),
+        status: "FAILED",
+        stripeInvoiceId: invoice.id,
+        stripePaymentIntentId: invoicePaymentIntentId(invoice),
+        invoiceUrl: invoice.hosted_invoice_url ?? null,
+        invoicePdfUrl: invoice.invoice_pdf ?? null,
+        failureReason: "Stripe invoice payment failed.",
+      },
+    });
+
+    await tx.transaction.create({
+      data: {
+        organizationId: localSubscription.organizationId,
+        paymentId: payment.id,
+        type: "SUBSCRIPTION_PAYMENT",
+        status: "FAILED",
+        amount: payment.amount,
+        currency: payment.currency,
+        providerReference: `invoice:${invoice.id}`,
+        description: `${localSubscription.plan.name} subscription payment failed`,
+        failureReason: "Stripe invoice payment failed.",
+      },
+    });
+
+    await tx.subscription.update({
+      where: { id: localSubscription.id },
+      data: { status: "FAILED" },
+    });
+
+    await tx.subscriptionEvent.create({
+      data: {
+        organizationId: localSubscription.organizationId,
+        subscriptionId: localSubscription.id,
+        eventType: "PAYMENT_FAILED",
+        previousPlanId: localSubscription.planId,
+        newPlanId: localSubscription.planId,
+        metadata: { stripeInvoiceId: invoice.id },
+      },
+    });
+  });
+};
+
+const syncStripeSubscription = async (subscription: Stripe.Subscription) => {
+  const local = await prisma.subscription.findUnique({
+    where: { stripeSubscriptionId: subscription.id },
+  });
+  if (!local) return;
+
+  const item = subscription.items.data[0];
+  const stripePriceId = item?.price.id ?? local.stripePriceId;
+  const plan = stripePriceId
+    ? await prisma.plan.findUnique({ where: { stripePriceId } })
+    : null;
+
+  const status =
+    subscription.status === "active" || subscription.status === "trialing"
+      ? "ACTIVE"
+      : subscription.status === "canceled"
+        ? "CANCELLED"
+        : subscription.status === "incomplete_expired"
+          ? "EXPIRED"
+          : "FAILED";
+
+  await prisma.subscription.update({
+    where: { id: local.id },
+    data: {
+      status,
+      ...(plan ? { planId: plan.id } : {}),
+      stripePriceId,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      currentPeriodStart: item
+        ? new Date(item.current_period_start * 1000)
+        : local.currentPeriodStart,
+      currentPeriodEnd: item
+        ? new Date(item.current_period_end * 1000)
+        : local.currentPeriodEnd,
+    },
+  });
+};
+
 const activateRegistration = async (sessionId: string) => {
   const details = await getCheckoutDetails(sessionId);
   const { session, subscription, subscriptionItem, customerId, invoice, invoiceId } =
@@ -354,6 +588,23 @@ const handleEvent = async (event: Stripe.Event) => {
     case "checkout.session.expired": {
       const session = event.data.object as Stripe.Checkout.Session;
       await updateRegistrationFromSession(session, "EXPIRED");
+      break;
+    }
+
+    case "invoice.paid":
+    case "invoice.payment_succeeded": {
+      await syncSuccessfulInvoice(event.data.object as Stripe.Invoice);
+      break;
+    }
+
+    case "invoice.payment_failed": {
+      await syncFailedInvoice(event.data.object as Stripe.Invoice);
+      break;
+    }
+
+    case "customer.subscription.updated":
+    case "customer.subscription.deleted": {
+      await syncStripeSubscription(event.data.object as Stripe.Subscription);
       break;
     }
 
