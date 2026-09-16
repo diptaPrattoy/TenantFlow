@@ -31,3 +31,9 @@ Thumbs.db
 
 # Local tooling
 *.tsbuildinfo
+
+# Prisma generated client
+backend/src/generated/
+
+# Local Postman files
+postman/*.json

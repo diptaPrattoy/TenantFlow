@@ -1,14 +1,17 @@
 import { app } from "./app.js";
 import { env } from "./config/env.js";
+import { prisma } from "./lib/prisma.js";
 
 const server = app.listen(env.port, () => {
   console.log(`TenantFlow API listening on http://localhost:${env.port}`);
 });
 
-const shutdown = (signal: string) => {
+const shutdown = async (signal: string) => {
   console.log(`${signal} received. Shutting down TenantFlow API...`);
 
-  server.close((error) => {
+  server.close(async (error) => {
+    await prisma.$disconnect();
+
     if (error) {
       console.error("Failed to close HTTP server cleanly.", error);
       process.exit(1);
@@ -18,5 +21,5 @@ const shutdown = (signal: string) => {
   });
 };
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));

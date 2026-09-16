@@ -17,9 +17,6 @@ export const createApp = () => {
     }),
   );
 
-  // Important: the Stripe webhook route will be mounted above the normal
-  // JSON body parser in the payments commit because Stripe signature
-  // verification requires access to the raw request body.
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ extended: true }));
 

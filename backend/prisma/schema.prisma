@@ -1,0 +1,353 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  TRIAL
+  SUSPENDED
+  CANCELLED
+}
+
+enum UserRole {
+  PLATFORM_ADMIN
+  ORG_ADMIN
+  ORG_MEMBER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum RegistrationStatus {
+  PENDING
+  CHECKOUT_CREATED
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PENDING
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum SubscriptionEventType {
+  CREATED
+  RENEWED
+  UPGRADED
+  DOWNGRADED
+  CANCELLED
+  EXPIRED
+  PAYMENT_FAILED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+  ROLLED_BACK
+}
+
+enum TransactionType {
+  SUBSCRIPTION_PAYMENT
+  REFUND
+}
+
+enum InvitationRole {
+  ORG_ADMIN
+  ORG_MEMBER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+}
+
+model Organization {
+  id               String             @id @default(uuid()) @db.Uuid
+  name             String             @db.VarChar(150)
+  contactEmail     String?            @map("contact_email") @db.VarChar(255)
+  contactPhone     String?            @map("contact_phone") @db.VarChar(30)
+  billingEmail     String             @map("billing_email") @db.VarChar(255)
+  status           OrganizationStatus @default(ACTIVE)
+  stripeCustomerId String?            @unique @map("stripe_customer_id") @db.VarChar(255)
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  users              User[]
+  subscription       Subscription?
+  subscriptionEvents SubscriptionEvent[]
+  payments           Payment[]
+  transactions       Transaction[]
+  invitations        Invitation[]
+  registrationIntent RegistrationIntent?
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("organizations")
+}
+
+model User {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String?     @map("organization_id") @db.Uuid
+  name           String      @db.VarChar(150)
+  email          String      @unique @db.VarChar(255)
+  passwordHash   String      @map("password_hash") @db.VarChar(255)
+  role           UserRole
+  status         UserStatus  @default(ACTIVE)
+  lastLoginAt    DateTime?   @map("last_login_at") @db.Timestamptz(3)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization       Organization?        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  sentInvitations    Invitation[]         @relation("InvitationSender")
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([role])
+  @@map("users")
+}
+
+model Plan {
+  id               String          @id @default(uuid()) @db.Uuid
+  name             String          @unique @db.VarChar(100)
+  description      String?
+  priceAmount      Int             @map("price_amount")
+  currency         String          @default("USD") @db.VarChar(3)
+  billingInterval  BillingInterval @map("billing_interval")
+  features         Json
+  isActive         Boolean         @default(true) @map("is_active")
+  stripeProductId  String?         @unique @map("stripe_product_id") @db.VarChar(255)
+  stripePriceId    String?         @unique @map("stripe_price_id") @db.VarChar(255)
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  registrationIntents RegistrationIntent[]
+  subscriptions       Subscription[]
+  previousPlanEvents  SubscriptionEvent[] @relation("PreviousPlan")
+  newPlanEvents       SubscriptionEvent[] @relation("NewPlan")
+
+  @@index([isActive])
+  @@map("plans")
+}
+
+model RegistrationIntent {
+  id                      String             @id @default(uuid()) @db.Uuid
+  organizationName        String             @map("organization_name") @db.VarChar(150)
+  adminName               String             @map("admin_name") @db.VarChar(150)
+  adminEmail              String             @map("admin_email") @db.VarChar(255)
+  adminPasswordHash       String             @map("admin_password_hash") @db.VarChar(255)
+  planId                  String             @map("plan_id") @db.Uuid
+  status                  RegistrationStatus @default(PENDING)
+  stripeCheckoutSessionId String?            @unique @map("stripe_checkout_session_id") @db.VarChar(255)
+  stripeCustomerId        String?            @map("stripe_customer_id") @db.VarChar(255)
+  stripeSubscriptionId    String?            @map("stripe_subscription_id") @db.VarChar(255)
+  organizationId          String?            @unique @map("organization_id") @db.Uuid
+  expiresAt               DateTime?          @map("expires_at") @db.Timestamptz(3)
+  createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  plan         Plan          @relation(fields: [planId], references: [id], onDelete: Restrict)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  transactions Transaction[]
+
+  @@index([adminEmail])
+  @@index([planId])
+  @@index([status])
+  @@map("registration_intents")
+}
+
+model Subscription {
+  id                   String             @id @default(uuid()) @db.Uuid
+  organizationId       String             @unique @map("organization_id") @db.Uuid
+  planId               String             @map("plan_id") @db.Uuid
+  status               SubscriptionStatus @default(PENDING)
+  stripeSubscriptionId String?            @unique @map("stripe_subscription_id") @db.VarChar(255)
+  stripePriceId        String?            @map("stripe_price_id") @db.VarChar(255)
+  currentPeriodStart   DateTime?          @map("current_period_start") @db.Timestamptz(3)
+  currentPeriodEnd     DateTime?          @map("current_period_end") @db.Timestamptz(3)
+  cancelAtPeriodEnd    Boolean            @default(false) @map("cancel_at_period_end")
+  cancelledAt          DateTime?          @map("cancelled_at") @db.Timestamptz(3)
+  lastExpiryReminderAt DateTime?          @map("last_expiry_reminder_at") @db.Timestamptz(3)
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  plan         Plan                @relation(fields: [planId], references: [id], onDelete: Restrict)
+  events       SubscriptionEvent[]
+  payments     Payment[]
+
+  @@index([planId])
+  @@index([status])
+  @@index([currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+model SubscriptionEvent {
+  id               String                @id @default(uuid()) @db.Uuid
+  organizationId   String                @map("organization_id") @db.Uuid
+  subscriptionId   String                @map("subscription_id") @db.Uuid
+  eventType        SubscriptionEventType @map("event_type")
+  previousPlanId   String?               @map("previous_plan_id") @db.Uuid
+  newPlanId        String?               @map("new_plan_id") @db.Uuid
+  metadata         Json?
+  effectiveAt      DateTime              @default(now()) @map("effective_at") @db.Timestamptz(3)
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  previousPlan Plan?        @relation("PreviousPlan", fields: [previousPlanId], references: [id], onDelete: Restrict)
+  newPlan      Plan?        @relation("NewPlan", fields: [newPlanId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("subscription_events")
+}
+
+model Payment {
+  id                      String        @id @default(uuid()) @db.Uuid
+  organizationId          String        @map("organization_id") @db.Uuid
+  subscriptionId          String        @map("subscription_id") @db.Uuid
+  amount                  Int
+  currency                String        @default("USD") @db.VarChar(3)
+  status                  PaymentStatus @default(PENDING)
+  stripeCheckoutSessionId String?       @unique @map("stripe_checkout_session_id") @db.VarChar(255)
+  stripeInvoiceId         String?       @unique @map("stripe_invoice_id") @db.VarChar(255)
+  stripePaymentIntentId   String?       @unique @map("stripe_payment_intent_id") @db.VarChar(255)
+  stripeChargeId          String?       @unique @map("stripe_charge_id") @db.VarChar(255)
+  invoiceUrl              String?       @map("invoice_url")
+  invoicePdfUrl           String?       @map("invoice_pdf_url")
+  failureReason           String?       @map("failure_reason")
+  paidAt                  DateTime?     @map("paid_at") @db.Timestamptz(3)
+  refundedAt              DateTime?     @map("refunded_at") @db.Timestamptz(3)
+  createdAt               DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subscription Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  transactions Transaction[]
+
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([organizationId, status, createdAt])
+  @@map("payments")
+}
+
+model Transaction {
+  id                   String            @id @default(uuid()) @db.Uuid
+  organizationId       String?           @map("organization_id") @db.Uuid
+  paymentId            String?           @map("payment_id") @db.Uuid
+  registrationIntentId String?           @map("registration_intent_id") @db.Uuid
+  type                 TransactionType
+  status               TransactionStatus @default(PENDING)
+  amount               Int
+  currency             String            @default("USD") @db.VarChar(3)
+  providerReference    String?           @unique @map("provider_reference") @db.VarChar(255)
+  description          String?
+  failureReason        String?           @map("failure_reason")
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization       Organization?      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  payment            Payment?           @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  registrationIntent RegistrationIntent? @relation(fields: [registrationIntentId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([paymentId])
+  @@index([registrationIntentId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([organizationId, status, createdAt])
+  @@map("transactions")
+}
+
+model Invitation {
+  id              String           @id @default(uuid()) @db.Uuid
+  organizationId  String           @map("organization_id") @db.Uuid
+  invitedByUserId String           @map("invited_by_user_id") @db.Uuid
+  email           String           @db.VarChar(255)
+  role            InvitationRole   @default(ORG_MEMBER)
+  tokenHash       String           @unique @map("token_hash") @db.VarChar(255)
+  status          InvitationStatus @default(PENDING)
+  expiresAt       DateTime         @map("expires_at") @db.Timestamptz(3)
+  acceptedAt      DateTime?        @map("accepted_at") @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  invitedBy    User         @relation("InvitationSender", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("invitations")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.VarChar(255)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model WebhookEvent {
+  id                 String        @id @default(uuid()) @db.Uuid
+  stripeEventId      String        @unique @map("stripe_event_id") @db.VarChar(255)
+  eventType          String        @map("event_type") @db.VarChar(150)
+  status             WebhookStatus @default(RECEIVED)
+  processingAttempts Int           @default(0) @map("processing_attempts")
+  lastError          String?       @map("last_error")
+  processedAt        DateTime?     @map("processed_at") @db.Timestamptz(3)
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status])
+  @@index([eventType])
+  @@map("webhook_events")
+}
