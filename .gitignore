@@ -2,8 +2,6 @@
 node_modules/
 
 # Environment files
-.env
-.env.*
 !.env.example
 
 # Next.js
@@ -26,7 +24,6 @@ pnpm-debug.log*
 # OS / editor
 .DS_Store
 Thumbs.db
-.vscode/
 .idea/
 
 # Local tooling
@@ -35,3 +32,4 @@ Thumbs.db
 # Prisma generated client
 backend/src/generated/
 
+config.bat
