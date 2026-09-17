@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { ProfilePanel } from "@/components/profile-panel";
 import { RoleGuard } from "@/components/role-guard";
 import { EmptyState, LoadingBlock, Notice } from "@/components/ui";
+import { useAuth } from "@/components/auth-provider";
 import { apiRequest } from "@/lib/api";
 import { formatDate, formatMoney, labelize } from "@/lib/format";
 import type { ApiEnvelope, Plan } from "@/lib/types";
@@ -46,15 +47,216 @@ function OrganizationOverview() {
 }
 
 function MembersPanel() {
-  const qc = useQueryClient();
-  const members = useQuery({ queryKey: ["organization-members"], queryFn: async () => (await apiRequest<ApiEnvelope<Member[]>>("/organization/members")).data });
-  const [email, setEmail] = useState(""); const [role, setRole] = useState<"ORG_ADMIN" | "ORG_MEMBER">("ORG_MEMBER"); const [message, setMessage] = useState(""); const [error, setError] = useState("");
-  const refresh = () => qc.invalidateQueries({ queryKey: ["organization-members"] });
-  const invite = useMutation({ mutationFn: () => apiRequest("/organization/invitations", { method: "POST", body: JSON.stringify({ email, role }) }), onSuccess: async () => { setMessage("Invitation sent."); setEmail(""); setError(""); await refresh(); }, onError: (e) => setError(e instanceof Error ? e.message : "Unable to invite member.") });
-  const changeRole = useMutation({ mutationFn: ({ id, nextRole }: { id: string; nextRole: "ORG_ADMIN" | "ORG_MEMBER" }) => apiRequest(`/organization/members/${id}/role`, { method: "PATCH", body: JSON.stringify({ role: nextRole }) }), onSuccess: refresh });
-  const remove = useMutation({ mutationFn: (id: string) => apiRequest(`/organization/members/${id}`, { method: "DELETE" }), onSuccess: refresh });
-  const submit = (e: FormEvent) => { e.preventDefault(); invite.mutate(); };
-  return <div className="two-column members-layout"><section className="panel"><div className="panel-heading"><div><p className="kicker">Invite</p><h2>Add a member</h2></div></div>{message && <Notice tone="success">{message}</Notice>}{error && <Notice tone="error">{error}</Notice>}<form className="form-stack" onSubmit={submit}><label className="field"><span>Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label><label className="field"><span>Role</span><select value={role} onChange={(e) => setRole(e.target.value as "ORG_ADMIN" | "ORG_MEMBER")}><option value="ORG_MEMBER">Member</option><option value="ORG_ADMIN">Organization admin</option></select></label><button className="button" disabled={invite.isPending}>Send invitation</button></form></section><section className="panel grow"><div className="panel-heading"><div><p className="kicker">Team</p><h2>Members</h2></div><span className="muted">{members.data?.length ?? 0} accounts</span></div>{members.isLoading ? <LoadingBlock /> : <div className="table-wrap"><table><thead><tr><th>Member</th><th>Role</th><th>Status</th><th>Joined</th><th></th></tr></thead><tbody>{members.data?.map((member) => <tr key={member.id}><td><strong>{member.name}</strong><small>{member.email}</small></td><td><select value={member.role} onChange={(e) => changeRole.mutate({ id: member.id, nextRole: e.target.value as "ORG_ADMIN" | "ORG_MEMBER" })}><option value="ORG_MEMBER">Member</option><option value="ORG_ADMIN">Org admin</option></select></td><td><span className="badge">{labelize(member.status)}</span></td><td>{formatDate(member.createdAt)}</td><td><button className="text-button danger" onClick={() => remove.mutate(member.id)}>Remove</button></td></tr>)}</tbody></table></div>}</section></div>;
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<"ORG_ADMIN" | "ORG_MEMBER">("ORG_MEMBER");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const members = useQuery({
+    queryKey: ["organization-members"],
+    queryFn: async () =>
+      (await apiRequest<ApiEnvelope<Member[]>>("/organization/members")).data,
+  });
+
+  const refreshMembers = () =>
+    queryClient.invalidateQueries({ queryKey: ["organization-members"] });
+
+  const invite = useMutation({
+    mutationFn: () =>
+      apiRequest("/organization/invitations", {
+        method: "POST",
+        body: JSON.stringify({ email, role }),
+      }),
+    onSuccess: async () => {
+      setMessage("Invitation sent.");
+      setEmail("");
+      setError("");
+      await refreshMembers();
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Unable to invite member.");
+    },
+  });
+
+  const changeRole = useMutation({
+    mutationFn: ({
+      id,
+      nextRole,
+    }: {
+      id: string;
+      nextRole: "ORG_ADMIN" | "ORG_MEMBER";
+    }) =>
+      apiRequest(`/organization/members/${id}/role`, {
+        method: "PATCH",
+        body: JSON.stringify({ role: nextRole }),
+      }),
+    onSuccess: async () => {
+      setError("");
+      await refreshMembers();
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Unable to change member role.");
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest(`/organization/members/${id}`, { method: "DELETE" }),
+    onSuccess: async () => {
+      setMessage("Member removed.");
+      setError("");
+      await refreshMembers();
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Unable to remove member.");
+    },
+  });
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    invite.mutate();
+  };
+
+  const removeMember = (member: Member) => {
+    if (member.id === user?.id) {
+      setError("You cannot remove your own account from the organization.");
+      return;
+    }
+
+    if (window.confirm(`Remove ${member.name} from the organization?`)) {
+      remove.mutate(member.id);
+    }
+  };
+
+  return (
+    <div className="two-column members-layout">
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <p className="kicker">Invite</p>
+            <h2>Add a member</h2>
+          </div>
+        </div>
+
+        {message && <Notice tone="success">{message}</Notice>}
+        {error && <Notice tone="error">{error}</Notice>}
+
+        <form className="form-stack" onSubmit={submit}>
+          <label className="field">
+            <span>Email</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </label>
+          <label className="field">
+            <span>Role</span>
+            <select
+              value={role}
+              onChange={(event) =>
+                setRole(event.target.value as "ORG_ADMIN" | "ORG_MEMBER")
+              }
+            >
+              <option value="ORG_MEMBER">Member</option>
+              <option value="ORG_ADMIN">Organization admin</option>
+            </select>
+          </label>
+          <button className="button" disabled={invite.isPending}>
+            {invite.isPending ? "Sending…" : "Send invitation"}
+          </button>
+        </form>
+      </section>
+
+      <section className="panel grow">
+        <div className="panel-heading">
+          <div>
+            <p className="kicker">Team</p>
+            <h2>Members</h2>
+          </div>
+          <span className="muted">{members.data?.length ?? 0} accounts</span>
+        </div>
+
+        {members.isLoading ? (
+          <LoadingBlock />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Joined</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {members.data?.map((member) => {
+                  const isCurrentUser = member.id === user?.id;
+
+                  return (
+                    <tr key={member.id}>
+                      <td>
+                        <strong>
+                          {member.name}
+                          {isCurrentUser && <span className="you-badge">You</span>}
+                        </strong>
+                        <small>{member.email}</small>
+                      </td>
+                      <td>
+                        <select
+                          value={member.role}
+                          disabled={isCurrentUser || changeRole.isPending}
+                          title={
+                            isCurrentUser
+                              ? "You cannot change your own organization role."
+                              : undefined
+                          }
+                          onChange={(event) =>
+                            changeRole.mutate({
+                              id: member.id,
+                              nextRole: event.target.value as
+                                | "ORG_ADMIN"
+                                | "ORG_MEMBER",
+                            })
+                          }
+                        >
+                          <option value="ORG_MEMBER">Member</option>
+                          <option value="ORG_ADMIN">Org admin</option>
+                        </select>
+                      </td>
+                      <td>
+                        <span className="badge">{labelize(member.status)}</span>
+                      </td>
+                      <td>{formatDate(member.createdAt)}</td>
+                      <td>
+                        {isCurrentUser ? (
+                          <span className="current-account-label">Current account</span>
+                        ) : (
+                          <button
+                            className="text-button danger"
+                            onClick={() => removeMember(member)}
+                            disabled={remove.isPending}
+                            type="button"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  );
 }
 
 function BillingPanel() {

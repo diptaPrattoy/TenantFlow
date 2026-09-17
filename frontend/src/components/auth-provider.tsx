@@ -1,8 +1,20 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
-import { apiRequest, clearAccessToken, getAccessToken, setAccessToken } from "@/lib/api";
+import {
+  ApiRequestError,
+  apiRequest,
+  clearAccessToken,
+  getAccessToken,
+  setAccessToken,
+} from "@/lib/api";
 import type { ApiEnvelope, CurrentUser } from "@/lib/types";
 
 type AuthContextValue = {
@@ -37,17 +49,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await apiRequest<ApiEnvelope<CurrentUser>>("/auth/me");
       setUser(response.data);
       return response.data;
-    } catch {
-      clearAccessToken();
-      setUser(null);
+    } catch (error) {
+      if (
+        error instanceof ApiRequestError &&
+        (error.status === 401 || error.status === 403)
+      ) {
+        clearAccessToken();
+        setUser(null);
+
+        if (
+          typeof window !== "undefined" &&
+          window.location.pathname.startsWith("/dashboard")
+        ) {
+          router.replace("/login");
+        }
+      }
+
       return null;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     void refreshUser();
+  }, [refreshUser]);
+
+  useEffect(() => {
+    const validateSession = () => {
+      if (getAccessToken()) {
+        void refreshUser();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        validateSession();
+      }
+    };
+
+    const intervalId = window.setInterval(validateSession, 60_000);
+    window.addEventListener("focus", validateSession);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", validateSession);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [refreshUser]);
 
   const login = async (email: string, password: string) => {

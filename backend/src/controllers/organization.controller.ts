@@ -85,6 +85,10 @@ export const removeMember: RequestHandler = async (req, res) => {
     throw new ApiError(400, "Invalid member ID.");
   }
 
+  if (memberId === req.user!.id) {
+    throw new ApiError(400, "You cannot remove your own account from the organization.");
+  }
+
   await removeOrganizationMember(
     req.tenant!.organizationId,
     req.user!.id,
