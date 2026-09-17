@@ -1,0 +1,921 @@
+{
+  "info": {
+    "_postman_id": "4ea22e3b-f7a0-4ab3-95a6-4c7fc209b663",
+    "name": "TenantFlow API",
+    "description": "Postman collection for local TenantFlow API testing.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "API Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Platform Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200 && body.data?.accessToken) {",
+                  "  pm.environment.set('platformAdminToken', body.data.accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{platformAdminEmail}}\",\n  \"password\": \"{{platformAdminPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "Organization Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200 && body.data?.accessToken) {",
+                  "  pm.environment.set('orgAdminToken', body.data.accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{orgAdminEmail}}\",\n  \"password\": \"{{orgAdminPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "Organization Member Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200 && body.data?.accessToken) {",
+                  "  pm.environment.set('orgMemberToken', body.data.accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{orgMemberEmail}}\",\n  \"password\": \"{{orgMemberPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "Current User - Organization Admin",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgAdminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/me"
+          },
+          "response": []
+        },
+        {
+          "name": "New Organization Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200 && body.data?.accessToken) {",
+                  "  pm.environment.set('newOrgAccessToken', body.data.accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newadmin@example.com\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Plans",
+      "item": [
+        {
+          "name": "List Available Plans",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200 && body.data?.length) {",
+                  "  pm.environment.set('planId', body.data[0].id);",
+                  "  if (body.data[1]) pm.environment.set('secondPlanId', body.data[1].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/plans"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Registration",
+      "item": [
+        {
+          "name": "Start Paid Registration",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 201 && body.data) {",
+                  "  pm.environment.set('registrationId', body.data.registrationId);",
+                  "  pm.environment.set('checkoutUrl', body.data.checkoutUrl);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationName\": \"Acme Labs\",\n  \"adminName\": \"Test Admin\",\n  \"adminEmail\": \"newadmin@example.com\",\n  \"password\": \"Password123!\",\n  \"planId\": \"{{planId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/registration/checkout"
+          },
+          "response": []
+        },
+        {
+          "name": "Registration Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/registration/{{registrationId}}/status"
+          },
+          "response": []
+        },
+        {
+          "name": "Retry Checkout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200 && body.data?.checkoutUrl) {",
+                  "  pm.environment.set('checkoutUrl', body.data.checkoutUrl);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/registration/{{registrationId}}/checkout"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Organization",
+      "item": [
+        {
+          "name": "Organization Profile - Admin",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgAdminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/organization"
+          },
+          "response": []
+        },
+        {
+          "name": "Organization Info - Member",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgMemberToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/organization"
+          },
+          "response": []
+        },
+        {
+          "name": "Members - Admin",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgAdminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/organization/members"
+          },
+          "response": []
+        },
+        {
+          "name": "Members - Member (403)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgMemberToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/organization/members"
+          },
+          "response": []
+        },
+        {
+          "name": "Organization - Platform Admin (403)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformAdminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/organization"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Organization Profile - Admin",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgAdminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Demo Organization\",\n  \"contactEmail\": \"contact@demo.test\",\n  \"contactPhone\": \"+8801700000000\",\n  \"billingEmail\": \"billing@demo.test\"\n}"
+            },
+            "url": "{{baseUrl}}/organization"
+          },
+          "response": []
+        },
+        {
+          "name": "Invite Member - Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 201 && body.data?.inviteToken) {",
+                  "  pm.environment.set('invitationToken', body.data.inviteToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgAdminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"invitee@tenantflow.local\",\n  \"role\": \"ORG_MEMBER\"\n}"
+            },
+            "url": "{{baseUrl}}/organization/invitations"
+          },
+          "response": []
+        },
+        {
+          "name": "Accept Member Invitation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 201 && body.data?.member?.id) {",
+                  "  pm.environment.set('invitedMemberId', body.data.member.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Invited Member\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": "{{baseUrl}}/invitations/{{invitationToken}}/accept"
+          },
+          "response": []
+        },
+        {
+          "name": "Change Member Role - Admin",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgAdminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"ORG_ADMIN\"\n}"
+            },
+            "url": "{{baseUrl}}/organization/members/{{invitedMemberId}}/role"
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Member - Admin",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgAdminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/organization/members/{{invitedMemberId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Billing",
+      "item": [
+        {
+          "name": "Subscription Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{newOrgAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/billing/subscription"
+          },
+          "response": []
+        },
+        {
+          "name": "Change Subscription Plan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{newOrgAccessToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planId\": \"{{secondPlanId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/billing/subscription/plan"
+          },
+          "response": []
+        },
+        {
+          "name": "Payment History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{newOrgAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/billing/payments"
+          },
+          "response": []
+        },
+        {
+          "name": "Organization Transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{newOrgAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/billing/transactions?status=SUCCESS"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Billing Portal Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200 && body.data?.url) {",
+                  "  pm.environment.set('billingPortalUrl', body.data.url);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{newOrgAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/billing/portal"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{newOrgAccessToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/billing/subscription/cancel"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Platform Admin",
+      "item": [
+        {
+          "name": "Overview Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformAdminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/stats"
+          },
+          "response": []
+        },
+        {
+          "name": "Organizations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200 && body.data?.length) {",
+                  "  pm.environment.set('adminOrganizationId', body.data[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformAdminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/organizations"
+          },
+          "response": []
+        },
+        {
+          "name": "Organization Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformAdminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/organizations/{{adminOrganizationId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Suspend Organization",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformAdminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SUSPENDED\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/organizations/{{adminOrganizationId}}/status"
+          },
+          "response": []
+        },
+        {
+          "name": "Reactivate Organization",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformAdminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/organizations/{{adminOrganizationId}}/status"
+          },
+          "response": []
+        },
+        {
+          "name": "Plans",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformAdminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/plans"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Plan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 201 && body.data?.id) {",
+                  "  pm.environment.set('adminPlanId', body.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformAdminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Business\",\n  \"description\": \"For larger teams\",\n  \"priceAmount\": 9900,\n  \"currency\": \"USD\",\n  \"billingInterval\": \"MONTHLY\",\n  \"features\": {\n    \"members\": 100,\n    \"support\": \"Priority\",\n    \"reports\": true\n  }\n}"
+            },
+            "url": "{{baseUrl}}/admin/plans"
+          },
+          "response": []
+        },
+        {
+          "name": "Disable Plan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformAdminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": false\n}"
+            },
+            "url": "{{baseUrl}}/admin/plans/{{adminPlanId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Platform Transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{platformAdminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/transactions?status=SUCCESS"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Profile and Password",
+      "item": [
+        {
+          "name": "Own Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgMemberToken}}",
+                "type": "text"
+              }
+            ],
+            "url": "{{baseUrl}}/profile"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Own Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgMemberToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Member\"\n}"
+            },
+            "url": "{{baseUrl}}/profile"
+          },
+          "response": []
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{orgMemberToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{orgMemberPassword}}\",\n  \"newPassword\": \"NewPassword123!\"\n}"
+            },
+            "url": "{{baseUrl}}/profile/password"
+          },
+          "response": []
+        },
+        {
+          "name": "Forgot Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 200 && body.data?.resetToken) {",
+                  "  pm.environment.set('resetToken', body.data.resetToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{orgMemberEmail}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/forgot-password"
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"password\": \"ResetPassword123!\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/reset-password"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/v1",
+      "type": "string"
+    }
+  ]
+}

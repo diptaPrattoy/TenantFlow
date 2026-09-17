@@ -38,13 +38,19 @@ export function AppShell({
   return (
     <div className="app-layout">
       <aside className="sidebar">
+        <div className="sidebar-glow" aria-hidden="true" />
         <Link href="/" className="sidebar-brand">
           <span className="brand-mark">TF</span>
           <span className="brand-copy">
             <strong>TenantFlow</strong>
-            <small>SaaS operations</small>
+            <small>Subscription operations</small>
           </span>
         </Link>
+
+        <div className="workspace-status">
+          <span className="workspace-status-dot" />
+          <span>Secure workspace</span>
+        </div>
 
         {nav.length > 0 && (
           <nav className="sidebar-nav">
@@ -55,6 +61,7 @@ export function AppShell({
                 href={item.href}
                 className={`nav-link ${pathname === item.href ? "active" : ""}`}
               >
+                <span className="nav-dot" />
                 {item.label}
               </Link>
             ))}
@@ -75,9 +82,26 @@ export function AppShell({
       </aside>
 
       <main className="dashboard-main">
+        {nav.length > 0 && (
+          <nav className="mobile-dashboard-nav" aria-label="Dashboard navigation">
+            {nav.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={pathname === item.href ? "active" : ""}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        )}
+
         <header className="dashboard-header">
           <div>
-            <p className="kicker">{subtitle}</p>
+            <div className="dashboard-eyebrow">
+              <span className="dashboard-eyebrow-dot" />
+              {subtitle}
+            </div>
             <h1 className="dashboard-title">{title}</h1>
           </div>
           <div className="dashboard-account-chip">
@@ -88,7 +112,8 @@ export function AppShell({
             </div>
           </div>
         </header>
-        {children}
+
+        <div className="dashboard-content">{children}</div>
       </main>
     </div>
   );

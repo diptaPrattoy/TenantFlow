@@ -1,180 +1,137 @@
 # TenantFlow
 
-TenantFlow is a multi-tenant SaaS subscription platform for organizations. Each organization has its own users, subscription, payment history, and transaction history while platform administrators manage the system globally.
+TenantFlow is a multi-tenant SaaS subscription platform where organizations register through paid Stripe onboarding, manage their own members and subscription, and remain isolated from every other tenant. A separate Platform Admin panel provides platform-wide organization, plan, transaction, and revenue visibility.
 
-## Tech Stack
+## Tech stack
 
-- **Frontend:** Next.js, React, TypeScript, Tailwind CSS
+- **Frontend:** Next.js, React, TypeScript, Tailwind CSS, TanStack Query
 - **Backend:** Node.js, Express.js, TypeScript
 - **Database:** PostgreSQL on Neon
-- **ORM:** Prisma ORM
-- **Authentication:** JWT and bcrypt password hashing
+- **ORM:** Prisma
+- **Authentication:** JWT + bcrypt
 - **Validation:** Zod
-- **Payments:** Stripe test mode
-- **Frontend data fetching:** TanStack Query
+- **Payments:** Stripe Checkout, Stripe Billing Portal, Stripe webhooks
+- **Email:** Nodemailer over SMTP
+- **Tests:** Vitest
 
-## Project Structure
+## Repository structure
 
 ```text
-tenantflow/
-├── frontend/
-├── backend/
-│   ├── prisma/
-│   │   ├── migrations/
-│   │   ├── schema.prisma
-│   │   └── seed.ts
-│   └── src/
-│       ├── controllers/
-│       ├── middleware/
-│       ├── routes/
-│       ├── schemas/
-│       ├── services/
-│       └── utils/
-├── postman/
+TenantFlow/
+├── frontend/            # Next.js application
+├── backend/             # Express API, Prisma schema, migrations and tests
+├── postman/             # Final API collection and local environment
 ├── package.json
 └── README.md
 ```
 
-## Database Design
+## Architecture
 
-The database is built around organization-level data isolation.
+```text
+Browser / Next.js
+       │
+       │ HTTPS / REST
+       ▼
+Express API
+  │    │     │
+  │    │     ├──────────────► SMTP provider
+  │    │
+  │    └────────────────────► Stripe
+  │                              │
+  │                              │ verified webhooks
+  │                              ▼
+  └────────────────────────► Prisma
+                                 │
+                                 ▼
+                         PostgreSQL / Neon
+```
 
-### Main tables
+The frontend never decides which tenant a protected organization request belongs to. The backend authenticates the JWT, reloads the current user from PostgreSQL, derives `organizationId` from that user, and scopes tenant-owned queries with that trusted value.
 
-- `organizations` — tenant accounts
-- `users` — platform admins, organization admins, and organization members
-- `plans` — subscription plans managed by platform admins
-- `registration_intents` — signup information kept before Stripe confirms the initial payment
-- `subscriptions` — an organization's current subscription
-- `subscription_events` — subscription history such as upgrades, downgrades, renewals, and cancellations
-- `payments` — Stripe payment records for an organization
-- `transactions` — application-level financial history, including failed and rolled-back operations
-- `invitations` — member invitations
-- `password_reset_tokens` — password reset tokens
-- `webhook_events` — Stripe webhook processing records used for idempotency
+## Core roles
+
+### Platform Admin
+
+- View platform statistics
+- Search/filter organizations
+- Inspect organization members, subscriptions, payments and transactions
+- Suspend/reactivate organizations
+- Create, edit, enable and disable plans
+- View/filter platform-wide transactions
+
+### Organization Admin
+
+- Edit organization profile
+- Invite members
+- Change another member's role
+- Remove another member
+- View current subscription and history
+- Upgrade/downgrade/cancel subscription
+- Manage payment method through Stripe Billing Portal
+- View payment history and invoice links
+- View tenant transaction history
+- Manage own profile/password
+
+An Organization Admin cannot remove themselves or change their own organization role. If another admin removes a signed-in account, the backend rejects that user's next protected request and the frontend clears the stale session.
+
+### Organization Member
+
+- View/edit own profile
+- Change password
+- View basic organization information and plan name
+- No member management, billing, subscription-control, payment or transaction access
+
+## Database design
+
+Main tables:
+
+- `organizations`
+- `users`
+- `plans`
+- `registration_intents`
+- `subscriptions`
+- `subscription_events`
+- `payments`
+- `transactions`
+- `invitations`
+- `password_reset_tokens`
+- `webhook_events`
 
 Money is stored as an integer in the smallest currency unit. For example, `$19.00` is stored as `1900`.
 
-## Registration Model
+### Why registration intents exist
 
-An organization is not created as active before its first payment is confirmed.
+TenantFlow uses paid onboarding. A real organization is not activated before Stripe confirms payment.
 
 ```text
 Signup details
-    ↓
+     ↓
 RegistrationIntent
-    ↓
+     ↓
 Stripe Checkout
+     ↓
+Verified webhook
+     ↓
+Prisma transaction
+     ├── Organization
+     ├── ORG_ADMIN user
+     ├── Subscription
+     ├── Subscription event
+     ├── Payment
+     ├── Transaction
+     └── RegistrationIntent → COMPLETED
+```
+
+If checkout is abandoned, the registration remains pending/expired rather than leaving an active organization behind.
+
+## Multi-tenant isolation
+
+Tenant isolation is enforced server-side.
+
+```text
+Bearer token
     ↓
-Verified Stripe webhook
-    ↓
-Database transaction
-    ├── Organization
-    ├── Organization Admin
-    ├── Subscription
-    ├── Payment
-    └── Transaction
-```
-
-This avoids leaving an active organization behind when checkout is abandoned or payment fails.
-
-## Authentication
-
-Users log in with email and password. Passwords are stored as bcrypt hashes and the API returns a short-lived JWT access token.
-
-The token identifies the user by ID. Protected requests then load the current user from the database so role changes, account suspension, and organization suspension take effect without trusting old role or tenant information from a token.
-
-Current authentication routes:
-
-```text
-POST /api/v1/auth/login
-GET  /api/v1/auth/me
-```
-
-`/auth/me` requires:
-
-```text
-Authorization: Bearer <access-token>
-```
-
-Login is rate-limited and request bodies are validated with Zod.
-
-## Paid Registration and Stripe Checkout
-
-Public registration is staged in `registration_intents`. Creating a checkout does not create an organization or user account.
-
-Current public billing routes:
-
-```text
-GET  /api/v1/plans
-POST /api/v1/registration/checkout
-POST /api/v1/registration/:registrationId/checkout
-GET  /api/v1/registration/:registrationId/status
-```
-
-`POST /registration/checkout` validates the signup data, hashes the admin password, creates a pending registration intent, and creates a Stripe Checkout Session in subscription mode. The API returns Stripe's hosted checkout URL to the frontend.
-
-If checkout is abandoned, the retry route reuses the existing open Stripe session. If that session has expired, a new session is created. A completed session is not replaced while payment confirmation is still pending.
-
-The real `Organization`, `ORG_ADMIN` user, subscription, payment, and transaction records are not created by the checkout endpoint. They are created only after Stripe sends a verified payment event.
-
-## Stripe Webhook Processing
-
-The Stripe webhook endpoint is:
-
-```text
-POST /api/v1/webhooks/stripe
-```
-
-It is mounted before the normal JSON body parser so Stripe signature verification receives the original raw request body. Webhook events are recorded in `webhook_events` by Stripe event ID before business logic runs. A processed event is ignored if Stripe sends it again, while a failed event can be retried.
-
-For a successful initial subscription payment, the backend retrieves the Checkout Session from Stripe and verifies the registration reference, selected plan, amount, currency, customer, and subscription. It then uses one Prisma transaction to create:
-
-```text
-Organization
-Organization Admin
-Subscription
-Subscription Event
-Payment
-Transaction
-RegistrationIntent -> COMPLETED
-```
-
-If any database operation fails, the Prisma transaction is rolled back and the webhook event is marked as failed so Stripe can retry it.
-
-Checkout expiration and asynchronous payment failure events update the pending registration without creating an active organization.
-
-### Stripe test setup
-
-Add the Stripe test-mode key and webhook signing secret to `backend/.env`:
-
-```env
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-```
-
-After seeding the local plans, create their matching Stripe products and recurring prices once:
-
-```bash
-npm run stripe:sync-plans
-```
-
-The command stores the returned Stripe product and price IDs on each plan. It is safe to run again because plans that already have Stripe IDs are skipped.
-
-For local webhook testing, run Stripe CLI in a separate terminal:
-
-```bash
-stripe listen --forward-to localhost:5000/api/v1/webhooks/stripe
-```
-
-Copy the `whsec_...` signing secret printed by the CLI into `STRIPE_WEBHOOK_SECRET`, restart the backend, then complete Checkout with a Stripe test card. After the webhook succeeds, the registration status becomes `COMPLETED` and the newly created Organization Admin can log in.
-
-## Tenant Isolation
-
-Organization routes never accept a tenant ID from the request body or query string. After JWT verification, the API reloads the user from PostgreSQL and creates a request-scoped tenant context from `user.organizationId`.
-
-```text
-JWT user ID
+JWT verification
     ↓
 Load current user from PostgreSQL
     ↓
@@ -185,228 +142,298 @@ req.tenant.organizationId
 organization-scoped Prisma query
 ```
 
-Current organization routes:
+Organization routes do not trust `organizationId` supplied through a request body or query string. Member updates also combine the requested member ID with the authenticated tenant ID, so knowing a user UUID from another organization does not grant access to that user.
 
-```text
-GET    /api/v1/organization
-PATCH  /api/v1/organization
-GET    /api/v1/organization/members
-POST   /api/v1/organization/invitations
-PATCH  /api/v1/organization/members/:memberId/role
-DELETE /api/v1/organization/members/:memberId
-POST   /api/v1/invitations/:token/accept
-```
+Platform Admin accounts have no organization context and use separate platform routes.
 
-`GET /organization` is available to Organization Admins and Organization Members. Members receive only basic organization information and the current plan name. Billing/contact fields are not returned to members.
+## Authentication and access control
 
-Organization Admins can update the organization profile, invite members, change another member's role, and remove another member. Member lookups always include the authenticated `organizationId`, so a UUID from another tenant cannot be used to manage that user. An admin cannot remove or change their own role through these management routes.
+Passwords are hashed with bcrypt. Login returns a short-lived JWT. The token identifies the user, but the backend reloads the current user from PostgreSQL on protected requests so role changes, removals, user suspension, or organization suspension are reflected immediately instead of trusting stale authorization data embedded in a token.
 
-Invitation tokens are random values, while only a SHA-256 hash is stored in the database. Invitations expire after seven days. In development, the create-invitation response includes the acceptance URL so the flow can be tested before email delivery is added. The public acceptance route validates the token, creates or reactivates the invited account, and marks the invitation as accepted in one database transaction.
+Sensitive auth/invitation/registration endpoints use rate limiting and Zod input validation.
 
-Platform Admin accounts do not have an organization context and cannot use tenant-only routes.
+The frontend also guards role-specific routes, but backend authorization remains the security boundary.
 
-## Environment Setup
+## Stripe payment flow
 
-Create `backend/.env` from the example file:
+### Initial registration
 
-```powershell
-Copy-Item backend/.env.example backend/.env
-```
+1. User selects an active plan.
+2. The API creates a `registration_intent` and Stripe Checkout Session.
+3. The browser completes payment on Stripe Checkout.
+4. Stripe sends a webhook to `/api/v1/webhooks/stripe`.
+5. The API verifies the Stripe signature against the raw request body.
+6. TenantFlow verifies the checkout session, plan, amount and currency server-side.
+7. A Prisma transaction atomically creates the tenant records and activates the registration.
+8. The frontend success screen polls registration status until it becomes `COMPLETED`.
 
-Set both Neon connection strings:
+The success redirect itself is never trusted as proof of payment.
 
-```env
-DATABASE_URL=postgresql://USER:PASSWORD@HOST-pooler.REGION.aws.neon.tech/DATABASE?sslmode=require
-DIRECT_URL=postgresql://USER:PASSWORD@HOST.REGION.aws.neon.tech/DATABASE?sslmode=require
-```
+### Ongoing billing
 
-`DATABASE_URL` is the pooled connection used by the running API. `DIRECT_URL` is the direct connection used by Prisma migrations.
+Organization Admins can change plans, schedule cancellation, and open Stripe Billing Portal for payment-method management. Invoice webhooks maintain payment history, transaction history and subscription status.
 
-Add a JWT secret of at least 32 characters:
+TenantFlow never stores card numbers, CVV values or full card credentials.
 
-```env
-JWT_SECRET=replace-this-with-a-long-random-secret
-JWT_EXPIRES_IN_SECONDS=3600
-```
+## Webhook idempotency
 
-The seed script can create the three accounts used while developing and reviewing the application:
+Each Stripe event ID is recorded in `webhook_events`.
 
-```env
-SEED_PLATFORM_ADMIN_NAME=Platform Admin
-SEED_PLATFORM_ADMIN_EMAIL=admin@tenantflow.local
-SEED_PLATFORM_ADMIN_PASSWORD=ChangeMe123!
+- A new event is claimed and processed.
+- A previously `PROCESSED` event returns successfully without repeating business effects.
+- A failed event can be retried.
+- A stale in-progress event can be reclaimed.
 
-SEED_ORGANIZATION_NAME=Demo Organization
-SEED_ORG_ADMIN_NAME=Organization Admin
-SEED_ORG_ADMIN_EMAIL=orgadmin@tenantflow.local
-SEED_ORG_ADMIN_PASSWORD=ChangeMe123!
-SEED_ORG_MEMBER_NAME=Organization Member
-SEED_ORG_MEMBER_EMAIL=member@tenantflow.local
-SEED_ORG_MEMBER_PASSWORD=ChangeMe123!
-```
+Unique provider references and Stripe IDs provide additional duplicate protection around payment records.
 
-The demo organization receives an active Starter subscription so tenant-scoped routes can be tested before Stripe onboarding is implemented. This is development seed data only; the real registration flow still creates organizations only after a verified Stripe payment.
+## Database transaction and rollback approach
 
-Do not commit your real `.env` file.
+Initial payment activation performs all related writes inside one `prisma.$transaction(...)` call. If creating any required record fails, PostgreSQL rolls the transaction back and the registration is not partially activated.
 
-## Getting Started
+The webhook record is marked `FAILED` outside that transaction so Stripe can retry the event safely.
 
-Install dependencies from the repository root:
-
-```bash
-npm install
-```
-
-Generate Prisma Client:
-
-```bash
-npm run db:generate
-```
-
-Apply the database migration:
-
-```bash
-npm run db:deploy
-```
-
-Seed the plans and development accounts:
-
-```bash
-npm run db:seed
-```
-
-Check the Neon connection:
-
-```bash
-npm run db:check
-```
-
-Start the backend:
-
-```bash
-npm run dev:backend
-```
-
-API base URL:
-
-```text
-http://localhost:5000/api/v1
-```
-
-Start the frontend in another terminal:
-
-```bash
-npm run dev:frontend
-```
-
-Frontend URL:
-
-```text
-http://localhost:3000
-```
-
-## Postman
-
-The `postman/` folder is used for local API testing while development is in progress. Its JSON files are currently ignored by Git and will be added to the repository with the final submission.
-
-The current local collection includes:
-
-```text
-Health
-Authentication
-Plans
-Registration
-Organization
-```
-
-It contains separate login requests for Platform Admin, Organization Admin, and Organization Member accounts, plus organization profile/member-list requests. The collection remains ignored by Git until the final submission commit.
-
-## Useful Commands
-
-```bash
-npm run dev:frontend
-npm run dev:backend
-npm run typecheck
-npm run build
-
-npm run db:generate
-npm run db:deploy
-npm run db:seed
-npm run db:check
-npm run db:studio
-npm run stripe:sync-plans
-```
-
-For future schema changes during development:
-
-```bash
-cd backend
-npm run db:migrate -- --name describe_the_change
-```
-
-## Billing and Subscription Management
-
-Organization Admin billing routes:
-
-```text
-GET   /api/v1/billing/subscription
-PATCH /api/v1/billing/subscription/plan
-POST  /api/v1/billing/subscription/cancel
-POST  /api/v1/billing/portal
-GET   /api/v1/billing/payments
-GET   /api/v1/billing/transactions
-```
-
-Plan changes are sent to Stripe first and then recorded locally with a subscription history event. Cancellation is scheduled at the end of the current billing period. Payment-method management is handled through Stripe Billing Portal instead of storing card details in TenantFlow.
-
-Ongoing Stripe invoice webhooks update payment history, transaction history, subscription status, renewal dates, and failed-payment records. Invoice URLs from Stripe are stored on payment records for download from the billing page.
-
-For local testing, use an organization created through the Stripe registration flow. The seeded demo organization is intentionally not linked to a Stripe customer or subscription.
-
-## Platform Administration
-
-Platform Admin routes:
-
-```text
-GET   /api/v1/admin/stats
-GET   /api/v1/admin/organizations
-GET   /api/v1/admin/organizations/:organizationId
-PATCH /api/v1/admin/organizations/:organizationId/status
-GET   /api/v1/admin/plans
-POST  /api/v1/admin/plans
-PATCH /api/v1/admin/plans/:planId
-GET   /api/v1/admin/transactions
-```
-
-Organization listing supports search, status filtering, and plan filtering. Platform Admins can suspend or reactivate organizations, inspect an organization's members and billing history, manage plans, and filter transactions across the platform.
-
-## User Profile and Password Recovery
-
-Authenticated users can manage their own account through:
-
-```text
-GET   /api/v1/profile
-PATCH /api/v1/profile
-PATCH /api/v1/profile/password
-```
-
-Password recovery routes are public and rate-limited:
-
-```text
-POST /api/v1/auth/forgot-password
-POST /api/v1/auth/reset-password
-```
-
-Reset tokens are random values while only their SHA-256 hashes are stored in PostgreSQL. They expire after 30 minutes and become unusable after a successful reset. During local development the forgot-password response includes the reset token so the flow can be tested before email delivery is enabled.
+The automated test suite includes a forced activation failure to verify this rollback/error path.
 
 ## Email notifications
 
-TenantFlow can send notification emails through any SMTP provider. Configure the SMTP values in `backend/.env` to enable delivery. If SMTP is not configured, the API continues to run and logs that the email was skipped.
+SMTP notifications are sent for:
 
-Notifications are sent for member invitations, password resets, successful or failed subscription payments, and subscription upgrades, downgrades, or cancellation. Expiry reminders can be run with:
+- Member invitation
+- Password reset
+- Payment success
+- Payment failure
+- Subscription upgrade
+- Subscription downgrade
+- Subscription cancellation
+- Subscription expiring soon
+
+Email delivery occurs after important database/payment state changes. An SMTP outage does not roll back a successful Stripe payment.
+
+Expiry reminders can be run with:
 
 ```bash
 npm run notifications:expiring
 ```
 
-The reminder command looks for active subscriptions ending within three days and uses `lastExpiryReminderAt` to avoid sending the same reminder more than once for a billing period.
+## Security notes
+
+- bcrypt password hashing
+- JWT expiration
+- Current user/role/status reloaded from PostgreSQL for protected requests
+- Server-side role guards
+- Server-side tenant scoping
+- Zod validation
+- Rate limiting on sensitive endpoints
+- Stripe webhook signature verification
+- Raw Stripe webhook body preserved before `express.json()`
+- No card/CVV storage
+- Environment variables for secrets
+- Hashed invitation and password-reset tokens
+- Idempotent Stripe event handling
+- Atomic payment activation with Prisma transactions
+- Generic API error responses instead of leaking internal exceptions
+
+## Environment variables
+
+Copy the examples:
+
+```powershell
+Copy-Item backend/.env.example backend/.env
+Copy-Item frontend/.env.example frontend/.env.local
+```
+
+Important backend values:
+
+```env
+NODE_ENV=development
+PORT=5000
+FRONTEND_URL=http://localhost:3000
+
+DATABASE_URL=postgresql://...-pooler.../neondb?sslmode=require
+DIRECT_URL=postgresql://.../neondb?sslmode=require
+
+JWT_SECRET=replace-with-a-long-random-secret
+JWT_EXPIRES_IN_SECONDS=3600
+
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-google-app-password
+SMTP_FROM_EMAIL=your-email@gmail.com
+SMTP_FROM_NAME=TenantFlow
+```
+
+Frontend:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000/api/v1
+```
+
+Never commit real `.env` files or live secrets.
+
+## Local setup
+
+From the repository root:
+
+```bash
+npm install
+npm run db:generate
+npm run db:deploy
+npm run db:seed
+npm run stripe:sync-plans
+```
+
+Start the API:
+
+```bash
+npm run dev:backend
+```
+
+Start the frontend in a second terminal:
+
+```bash
+npm run dev:frontend
+```
+
+Frontend:
+
+```text
+http://localhost:3000
+```
+
+API:
+
+```text
+http://localhost:5000/api/v1
+```
+
+### Local Stripe webhooks
+
+Run Stripe CLI in another terminal:
+
+```bash
+stripe listen --api-key YOUR_SK_TEST_KEY --forward-to http://localhost:5000/api/v1/webhooks/stripe
+```
+
+Copy the printed `whsec_...` into `STRIPE_WEBHOOK_SECRET` and restart the backend.
+
+A standard successful test card is:
+
+```text
+4242 4242 4242 4242
+Any future expiry
+Any 3-digit CVC
+```
+
+## Development/reviewer credentials
+
+The seed script creates three local accounts using values from `backend/.env`.
+
+Default example credentials from `.env.example`:
+
+```text
+Platform Admin
+admin@tenantflow.local
+ChangeMe123!
+
+Organization Admin
+orgadmin@tenantflow.local
+ChangeMe123!
+
+Organization Member
+member@tenantflow.local
+ChangeMe123!
+```
+
+The seeded organization is useful for role/tenant testing. Stripe billing actions should be tested with an Organization Admin created through the paid registration flow because that organization has real Stripe test customer/subscription IDs.
+
+## Automated tests
+
+The focused test suite covers the assessment's high-risk behavior:
+
+- Authentication
+- Invalid/removed sessions
+- Role authorization
+- Tenant context enforcement
+- Tenant-scoped member mutation
+- Successful Stripe registration activation
+- Duplicate webhook handling
+- Transaction rollback/error handling
+
+Run:
+
+```bash
+npm test
+```
+
+The goal is not full coverage; the tests target the areas where a failure could cause unauthorized access, cross-tenant data exposure, or incorrect billing state.
+
+## Typecheck and production build
+
+```bash
+npm run typecheck
+npm run build
+```
+
+## Postman collection
+
+The final collection is committed under:
+
+```text
+postman/TenantFlow.postman_collection.json
+postman/TenantFlow.local.postman_environment.json
+```
+
+Import both files into Postman and select the **TenantFlow Local** environment. The collection contains the role logins and the main auth, registration, organization, billing, admin and profile flows used during development.
+
+## Main API groups
+
+```text
+/api/v1/auth
+/api/v1/plans
+/api/v1/registration
+/api/v1/invitations
+/api/v1/profile
+/api/v1/organization
+/api/v1/billing
+/api/v1/admin
+/api/v1/webhooks/stripe
+```
+
+## AI usage
+
+AI tools were used as a development assistant for implementation planning, boilerplate generation, debugging TypeScript/Stripe integration issues, reviewing edge cases, and improving documentation. Each feature was integrated incrementally, tested locally, and reviewed so the project can be explained and modified without relying on generated output during the review call.
+
+## Known limitations
+
+- Access tokens are stored in browser `localStorage` for this assessment. A production version would preferably move to secure HttpOnly cookies with a refresh/session strategy.
+- Expiry reminders are implemented as a runnable job (`npm run notifications:expiring`) rather than a hosted scheduler/worker because deployment is outside the required scope.
+- Stripe Billing Portal is used for payment-method management instead of building custom card-management UI.
+- Invoice downloads use Stripe-hosted invoice URLs/PDFs. Custom PDF invoice generation is not implemented because it is an optional bonus.
+- Per-organization custom SMTP configuration is not implemented because it is an optional bonus.
+- No CI/CD workflow or live deployment is included because those are not required for the core assessment.
+
+## Submission walkthrough focus
+
+For the product video, the shortest useful path is:
+
+1. Register a new organization and choose a plan.
+2. Pay in Stripe test Checkout.
+3. Show webhook-confirmed activation and Organization Admin login.
+4. Invite/member-manage inside the organization.
+5. Show billing/payment/transaction history.
+6. Log in as Organization Member to demonstrate restricted access.
+7. Log in as Platform Admin to show organizations, plans, stats and transactions.
+
+For the code video, focus on:
+
+1. `auth.middleware.ts`
+2. `tenant.middleware.ts`
+3. organization-scoped service queries
+4. Stripe raw webhook route
+5. `webhook.service.ts` idempotency and `$transaction`
+6. tests for tenant isolation, duplicate events and rollback
