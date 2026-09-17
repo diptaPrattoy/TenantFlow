@@ -3,11 +3,23 @@ import { stripe } from "../lib/stripe.js";
 import { ApiError } from "../errors/api-error.js";
 import { env } from "../config/env.js";
 import type { ChangePlanInput } from "../schemas/billing.schema.js";
+import {
+  sendSubscriptionCancelledEmail,
+  sendSubscriptionChangedEmail,
+} from "./email.service.js";
 
 const getOrganizationSubscription = async (organizationId: string) => {
   const subscription = await prisma.subscription.findUnique({
     where: { organizationId },
-    include: { plan: true },
+    include: {
+      plan: true,
+      organization: {
+        select: {
+          name: true,
+          billingEmail: true,
+        },
+      },
+    },
   });
 
   if (!subscription) {
@@ -88,8 +100,8 @@ export const changeSubscriptionPlan = async (
       ? "UPGRADED"
       : "DOWNGRADED";
 
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.subscription.update({
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.subscription.update({
       where: { id: subscription.id },
       data: {
         planId: nextPlan.id,
@@ -120,8 +132,18 @@ export const changeSubscriptionPlan = async (
       },
     });
 
-    return updated;
+    return result;
   });
+
+  await sendSubscriptionChangedEmail({
+    to: subscription.organization.billingEmail,
+    organizationName: subscription.organization.name,
+    change: eventType === "UPGRADED" ? "upgraded" : "downgraded",
+    previousPlanName: subscription.plan.name,
+    newPlanName: nextPlan.name,
+  });
+
+  return updated;
 };
 
 export const cancelSubscription = async (organizationId: string) => {
@@ -139,8 +161,8 @@ export const cancelSubscription = async (organizationId: string) => {
     cancel_at_period_end: true,
   });
 
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.subscription.update({
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.subscription.update({
       where: { id: subscription.id },
       data: {
         cancelAtPeriodEnd: true,
@@ -161,8 +183,17 @@ export const cancelSubscription = async (organizationId: string) => {
       },
     });
 
-    return updated;
+    return result;
   });
+
+  await sendSubscriptionCancelledEmail({
+    to: subscription.organization.billingEmail,
+    organizationName: subscription.organization.name,
+    planName: subscription.plan.name,
+    currentPeriodEnd: updated.currentPeriodEnd,
+  });
+
+  return updated;
 };
 
 export const createBillingPortalSession = async (organizationId: string) => {

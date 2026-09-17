@@ -3,6 +3,10 @@ import type Stripe from "stripe";
 import { prisma } from "../lib/prisma.js";
 import { stripe } from "../lib/stripe.js";
 import { ApiError } from "../errors/api-error.js";
+import {
+  sendPaymentFailedEmail,
+  sendPaymentSucceededEmail,
+} from "./email.service.js";
 
 const webhookErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
@@ -180,7 +184,12 @@ const syncSuccessfulInvoice = async (invoice: Stripe.Invoice) => {
 
   const localSubscription = await prisma.subscription.findUnique({
     where: { stripeSubscriptionId },
-    include: { plan: true },
+    include: {
+      plan: true,
+      organization: {
+        select: { name: true, billingEmail: true },
+      },
+    },
   });
 
   // The first invoice can arrive before checkout.session.completed creates the local subscription.
@@ -284,6 +293,15 @@ const syncSuccessfulInvoice = async (invoice: Stripe.Invoice) => {
       },
     });
   });
+
+  await sendPaymentSucceededEmail({
+    to: localSubscription.organization.billingEmail,
+    organizationName: localSubscription.organization.name,
+    planName: localSubscription.plan.name,
+    amount: invoice.amount_paid,
+    currency: invoice.currency,
+    invoiceUrl: invoice.hosted_invoice_url,
+  });
 };
 
 const syncFailedInvoice = async (invoice: Stripe.Invoice) => {
@@ -292,7 +310,12 @@ const syncFailedInvoice = async (invoice: Stripe.Invoice) => {
 
   const localSubscription = await prisma.subscription.findUnique({
     where: { stripeSubscriptionId },
-    include: { plan: true },
+    include: {
+      plan: true,
+      organization: {
+        select: { name: true, billingEmail: true },
+      },
+    },
   });
   if (!localSubscription) return;
 
@@ -347,6 +370,14 @@ const syncFailedInvoice = async (invoice: Stripe.Invoice) => {
         metadata: { stripeInvoiceId: invoice.id },
       },
     });
+  });
+
+  await sendPaymentFailedEmail({
+    to: localSubscription.organization.billingEmail,
+    organizationName: localSubscription.organization.name,
+    planName: localSubscription.plan.name,
+    amount: invoice.amount_due,
+    currency: invoice.currency,
   });
 };
 
@@ -448,7 +479,7 @@ const activateRegistration = async (sessionId: string) => {
   );
   const currentPeriodEnd = new Date(subscriptionItem.current_period_end * 1000);
 
-  await prisma.$transaction(async (tx) => {
+  const activated = await prisma.$transaction(async (tx) => {
     const currentIntent = await tx.registrationIntent.findUnique({
       where: { id: intent.id },
       select: { status: true },
@@ -459,7 +490,7 @@ const activateRegistration = async (sessionId: string) => {
     }
 
     if (currentIntent.status === "COMPLETED") {
-      return;
+      return false;
     }
 
     const organization = await tx.organization.create({
@@ -547,7 +578,20 @@ const activateRegistration = async (sessionId: string) => {
         organizationId: organization.id,
       },
     });
+
+    return true;
   });
+
+  if (activated) {
+    await sendPaymentSucceededEmail({
+      to: intent.adminEmail,
+      organizationName: intent.organizationName,
+      planName: intent.plan.name,
+      amount: session.amount_total ?? intent.plan.priceAmount,
+      currency: session.currency ?? intent.plan.currency,
+      invoiceUrl: invoice?.hosted_invoice_url,
+    });
+  }
 };
 
 const updateRegistrationFromSession = async (
@@ -561,13 +605,29 @@ const updateRegistrationFromSession = async (
     return;
   }
 
-  await prisma.registrationIntent.updateMany({
-    where: {
-      id: registrationId,
-      status: { not: "COMPLETED" },
-    },
+  const intent = await prisma.registrationIntent.findUnique({
+    where: { id: registrationId },
+    include: { plan: true },
+  });
+
+  if (!intent || intent.status === "COMPLETED") {
+    return;
+  }
+
+  await prisma.registrationIntent.update({
+    where: { id: intent.id },
     data: { status },
   });
+
+  if (status === "FAILED") {
+    await sendPaymentFailedEmail({
+      to: intent.adminEmail,
+      organizationName: intent.organizationName,
+      planName: intent.plan.name,
+      amount: session.amount_total ?? intent.plan.priceAmount,
+      currency: session.currency ?? intent.plan.currency,
+    });
+  }
 };
 
 const handleEvent = async (event: Stripe.Event) => {

@@ -15,7 +15,8 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:check": "tsx src/scripts/check-database.ts",
-    "stripe:sync-plans": "tsx src/scripts/sync-stripe-plans.ts"
+    "stripe:sync-plans": "tsx src/scripts/sync-stripe-plans.ts",
+    "notifications:expiring": "tsx src/scripts/send-expiry-reminders.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
@@ -28,7 +29,8 @@
     "express-rate-limit": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "zod": "^4.1.5",
-    "stripe": "22.6.2"
+    "stripe": "22.6.2",
+    "nodemailer": "10.0.10"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

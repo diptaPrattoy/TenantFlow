@@ -398,3 +398,15 @@ POST /api/v1/auth/reset-password
 ```
 
 Reset tokens are random values while only their SHA-256 hashes are stored in PostgreSQL. They expire after 30 minutes and become unusable after a successful reset. During local development the forgot-password response includes the reset token so the flow can be tested before email delivery is enabled.
+
+## Email notifications
+
+TenantFlow can send notification emails through any SMTP provider. Configure the SMTP values in `backend/.env` to enable delivery. If SMTP is not configured, the API continues to run and logs that the email was skipped.
+
+Notifications are sent for member invitations, password resets, successful or failed subscription payments, and subscription upgrades, downgrades, or cancellation. Expiry reminders can be run with:
+
+```bash
+npm run notifications:expiring
+```
+
+The reminder command looks for active subscriptions ending within three days and uses `lastExpiryReminderAt` to avoid sending the same reminder more than once for a billing period.

@@ -18,7 +18,8 @@
     "db:seed": "npm run db:seed --workspace=backend",
     "db:studio": "npm run db:studio --workspace=backend",
     "db:check": "npm run db:check --workspace=backend",
-    "stripe:sync-plans": "npm run stripe:sync-plans --workspace=backend"
+    "stripe:sync-plans": "npm run stripe:sync-plans --workspace=backend",
+    "notifications:expiring": "npm run notifications:expiring --workspace=backend"
   },
   "engines": {
     "node": ">=22.18.0"

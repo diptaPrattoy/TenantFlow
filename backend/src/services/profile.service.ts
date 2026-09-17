@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { env } from "../config/env.js";
 import { ApiError } from "../errors/api-error.js";
 import { comparePassword, hashPassword } from "../utils/password.js";
+import { sendPasswordResetEmail } from "./email.service.js";
 import type {
   ChangePasswordInput,
   ForgotPasswordInput,
@@ -65,7 +66,7 @@ export const changePassword = async (
 export const createPasswordReset = async (input: ForgotPasswordInput) => {
   const user = await prisma.user.findUnique({
     where: { email: input.email },
-    select: { id: true, status: true },
+    select: { id: true, name: true, email: true, status: true },
   });
 
   // Keep the same public response whether the email exists or not.
@@ -88,10 +89,19 @@ export const createPasswordReset = async (input: ForgotPasswordInput) => {
     },
   });
 
+  const resetUrl = `${env.frontendUrl}/reset-password?token=${token}`;
+
+  await sendPasswordResetEmail({
+    to: user.email,
+    name: user.name,
+    resetUrl,
+    expiresAt,
+  });
+
   return env.nodeEnv === "development"
     ? {
         resetToken: token,
-        resetUrl: `${env.frontendUrl}/reset-password?token=${token}`,
+        resetUrl,
         expiresAt,
       }
     : {};

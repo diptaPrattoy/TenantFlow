@@ -8,6 +8,7 @@ import type {
   UpdateOrganizationInput,
 } from "../schemas/organization.schema.js";
 import { createInvitationToken } from "./invitation.service.js";
+import { sendInvitationEmail } from "./email.service.js";
 
 const getCurrentPlan = async (organizationId: string) => {
   return prisma.subscription.findUnique({
@@ -186,6 +187,28 @@ export const inviteOrganizationMember = async (
       createdAt: true,
     },
   });
+
+  const [organization, invitedBy] = await Promise.all([
+    prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { name: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: invitedByUserId },
+      select: { name: true },
+    }),
+  ]);
+
+  if (organization && invitedBy) {
+    await sendInvitationEmail({
+      to: invitation.email,
+      organizationName: organization.name,
+      invitedByName: invitedBy.name,
+      role: invitation.role,
+      acceptUrl,
+      expiresAt: invitation.expiresAt,
+    });
+  }
 
   return {
     ...invitation,
