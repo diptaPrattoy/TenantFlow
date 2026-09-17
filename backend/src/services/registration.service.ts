@@ -51,8 +51,8 @@ const createCheckoutSession = async (
         planId,
       },
     },
-    success_url: `${baseFrontendUrl}/?checkout=success&registration_id=${encodedRegistrationId}&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${baseFrontendUrl}/?checkout=cancelled&registration_id=${encodedRegistrationId}`,
+    success_url: `${baseFrontendUrl}/checkout/success?registration_id=${encodedRegistrationId}&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${baseFrontendUrl}/checkout/cancelled?registration_id=${encodedRegistrationId}`,
   });
 };
 

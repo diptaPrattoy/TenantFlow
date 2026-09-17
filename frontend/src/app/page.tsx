@@ -1,51 +1,75 @@
-import { appConfig } from "@/lib/config";
+"use client";
 
-const foundationItems = [
-  {
-    label: "Frontend",
-    value: "Next.js + TypeScript",
-  },
-  {
-    label: "Backend",
-    value: "Express.js REST API",
-  },
-  {
-    label: "API Base",
-    value: appConfig.apiBaseUrl,
-  },
-];
+import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/api";
+import { formatMoney } from "@/lib/format";
+import type { ApiEnvelope, Plan } from "@/lib/types";
 
 export default function Home() {
+  const plans = useQuery({
+    queryKey: ["public-plans"],
+    queryFn: async () => (await apiRequest<ApiEnvelope<Plan[]>>("/plans")).data,
+  });
+
   return (
-    <main className="page-shell">
-      <section className="hero-card">
-        <div className="brand-row">
+    <main className="marketing-shell">
+      <header className="marketing-header">
+        <Link href="/" className="sidebar-brand">
           <span className="brand-mark">TF</span>
-          <span className="eyebrow">TenantFlow</span>
+          <span>TenantFlow</span>
+        </Link>
+        <div className="header-actions">
+          <Link className="button secondary" href="/login">Sign in</Link>
+          <Link className="button" href="/register">Start subscription</Link>
         </div>
+      </header>
 
-        <div className="hero-copy">
-          <p className="kicker">Multi-tenant SaaS platform</p>
-          <h1>Project foundation is ready.</h1>
-          <p className="description">
-            TenantFlow is being built with a separated Next.js frontend and
-            Express API. Database, authentication, billing, and tenant-specific
-            business logic will be added incrementally.
-          </p>
+      <section className="marketing-hero">
+        <p className="kicker">Multi-tenant subscription management</p>
+        <h1>One platform. Separate organizations. Clean billing.</h1>
+        <p className="lead">
+          TenantFlow gives each organization its own users, subscription and payment
+          history while platform administrators keep a complete operational view.
+        </p>
+        <div className="hero-actions">
+          <Link className="button" href="/register">Create an organization</Link>
+          <Link className="button secondary" href="/login">Sign in</Link>
         </div>
+      </section>
 
-        <div className="foundation-grid">
-          {foundationItems.map((item) => (
-            <article className="foundation-item" key={item.label}>
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
+      <section className="section-block" id="plans">
+        <div className="section-heading">
+          <div>
+            <p className="kicker">Plans</p>
+            <h2>Choose a subscription</h2>
+          </div>
+          <p className="muted">Checkout is handled securely by Stripe.</p>
+        </div>
+        <div className="plan-grid">
+          {plans.isLoading && <div className="panel muted">Loading plans…</div>}
+          {plans.data?.map((plan) => (
+            <article className="plan-card" key={plan.id}>
+              <div>
+                <p className="kicker">{plan.billingInterval}</p>
+                <h3>{plan.name}</h3>
+                <p className="muted">{plan.description || "Subscription plan"}</p>
+              </div>
+              <div className="plan-price">
+                {formatMoney(plan.priceAmount, plan.currency)}
+                <span> / {plan.billingInterval.toLowerCase()}</span>
+              </div>
+              <ul className="feature-list">
+                {Object.entries(plan.features).map(([key, value]) => (
+                  <li key={key}><strong>{key}</strong><span>{String(value)}</span></li>
+                ))}
+              </ul>
+              <Link className="button full" href={`/register?plan=${plan.id}`}>
+                Select {plan.name}
+              </Link>
             </article>
           ))}
-        </div>
-
-        <div className="status-row">
-          <span className="status-dot" aria-hidden="true" />
-          <span>Project setup ready · API foundation in progress</span>
+          {plans.isError && <div className="notice error">Unable to load plans.</div>}
         </div>
       </section>
     </main>
